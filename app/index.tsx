@@ -7,6 +7,7 @@ import {
   StyleSheet,
   TextInput,
   ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -73,11 +74,11 @@ const gridCardStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       gap: 6,
     },
     badge: {
-      paddingHorizontal: 7,
-      paddingVertical: 2,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
       borderRadius: Radii.pill,
     },
-    badgeText: { fontSize: 9, fontFamily: Fonts.bold, textTransform: 'uppercase', letterSpacing: 0.5 },
+    badgeText: { fontSize: 10, fontFamily: Fonts.bold, textTransform: 'uppercase', letterSpacing: 0.5 },
     label: { fontSize: 14, fontFamily: Fonts.semibold, color: colors.text, marginBottom: 3 },
     desc: { fontSize: 11, fontFamily: Fonts.regular, color: colors.textMuted, lineHeight: 16 },
   });
@@ -131,12 +132,12 @@ const listCardStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
     },
     info: { flex: 1 },
     badge: {
-      paddingHorizontal: 7,
-      paddingVertical: 2,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
       borderRadius: Radii.pill,
       marginRight: 2,
     },
-    badgeText: { fontSize: 9, fontFamily: Fonts.bold, textTransform: 'uppercase', letterSpacing: 0.5 },
+    badgeText: { fontSize: 10, fontFamily: Fonts.bold, textTransform: 'uppercase', letterSpacing: 0.5 },
     label: { fontSize: 14, fontFamily: Fonts.semibold, color: colors.text, marginBottom: 2 },
     desc: { fontSize: 11, fontFamily: Fonts.regular, color: colors.textMuted },
   });
@@ -223,6 +224,7 @@ const editCardStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
 export default function HomeScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const { width } = useWindowDimensions();
 
   const [query, setQuery] = useState('');
   const [badge, setBadge] = useState('All');
@@ -288,7 +290,15 @@ export default function HomeScreen() {
   }, []);
 
   const isGrid = viewMode === 'grid' && !editMode;
-  const listKey = `${viewMode}-${editMode ? 'edit' : 'view'}`;
+  
+  const numColumns = useMemo(() => {
+    if (!isGrid) return 1;
+    if (width >= 1024) return 4;
+    if (width >= 768) return 3;
+    return 2;
+  }, [isGrid, width]);
+
+  const listKey = `${viewMode}-${editMode ? 'edit' : 'view'}-${numColumns}`;
 
   const renderItem = useCallback(
     ({ item, index }: { item: ToolMeta; index: number }) => {
@@ -316,16 +326,17 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
       {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <View style={[styles.logoIcon, { backgroundColor: colors.accent }]}>
-            <Ionicons name="flash" size={18} color="#fff" />
+      <View style={styles.headerWrapper}>
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <View style={[styles.logoIcon, { backgroundColor: colors.accent }]}>
+              <Ionicons name="flash" size={18} color="#fff" />
+            </View>
+            <Text style={styles.logoText}>
+              Utility<Text style={{ color: colors.accent }}>Kit</Text>
+            </Text>
           </View>
-          <Text style={styles.logoText}>
-            Utility<Text style={{ color: colors.accent }}>Kit</Text>
-          </Text>
-        </View>
-        <View style={styles.headerRight}>
+          <View style={styles.headerRight}>
           <TouchableOpacity
             style={[
               styles.iconBtn,
@@ -347,7 +358,8 @@ export default function HomeScreen() {
             onPress={() => router.push('/settings')}
           >
             <Ionicons name="settings-outline" size={20} color={colors.textMuted} />
-          </TouchableOpacity>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -413,11 +425,12 @@ export default function HomeScreen() {
 
       {/* Tool Grid / List */}
       <FlatList
+        style={styles.listFlex}
         key={listKey}
         data={editMode ? orderedTools : displayTools}
         keyExtractor={item => item.id}
-        numColumns={isGrid ? 2 : 1}
-        columnWrapperStyle={isGrid ? styles.row : undefined}
+        numColumns={numColumns}
+        columnWrapperStyle={numColumns > 1 ? styles.row : undefined}
         ItemSeparatorComponent={() => <View style={{ height: CARD_GAP }} />}
         contentContainerStyle={styles.grid}
         renderItem={renderItem}
@@ -431,15 +444,21 @@ export default function HomeScreen() {
 const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
   StyleSheet.create({
     root: { flex: 1 },
+    headerWrapper: {
+      backgroundColor: colors.surface,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      width: '100%',
+    },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: Spacing.lg,
       paddingVertical: Spacing.md,
-      backgroundColor: colors.surface,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
+      width: '100%',
+      maxWidth: 1200,
+      alignSelf: 'center',
     },
     headerLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
     headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
@@ -466,6 +485,9 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       paddingHorizontal: Spacing.lg,
       paddingTop: Spacing.md,
       paddingBottom: 6,
+      width: '100%',
+      maxWidth: 1200,
+      alignSelf: 'center',
     },
     searchBox: {
       flex: 1,
@@ -478,18 +500,32 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       height: 38,
     },
     searchInput: { flex: 1, fontSize: 14, fontFamily: Fonts.regular, padding: 0 },
-    chipScroll: { maxHeight: 44 },
-    chips: { paddingHorizontal: Spacing.lg, gap: 8, alignItems: 'center', paddingVertical: 6 },
+    listFlex: { flex: 1 },
+    chipScroll: { 
+      flexGrow: 0,
+      flexShrink: 0,
+      width: '100%',
+      maxWidth: 1200,
+      alignSelf: 'center',
+    },
+    chips: { paddingHorizontal: Spacing.lg, gap: 8, paddingVertical: 12 },
     chip: {
-      paddingHorizontal: 12,
-      paddingVertical: 5,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
       borderRadius: Radii.pill,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surface,
     },
-    chipText: { fontSize: 12, fontFamily: Fonts.semibold },
-    subRow: { paddingHorizontal: Spacing.lg, paddingTop: 6, paddingBottom: Spacing.sm },
+    chipText: { fontSize: 13, fontFamily: Fonts.semibold },
+    subRow: { 
+      paddingHorizontal: Spacing.lg, 
+      paddingTop: 6, 
+      paddingBottom: Spacing.sm,
+      width: '100%',
+      maxWidth: 1200,
+      alignSelf: 'center',
+    },
     subTitle: {
       fontSize: 11,
       fontFamily: Fonts.semibold,
@@ -497,6 +533,12 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       textTransform: 'uppercase',
       letterSpacing: 1.2,
     },
-    grid: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.huge },
+    grid: { 
+      paddingHorizontal: Spacing.lg, 
+      paddingBottom: Spacing.huge,
+      width: '100%',
+      maxWidth: 1200,
+      alignSelf: 'center',
+    },
     row: { gap: CARD_GAP },
   });

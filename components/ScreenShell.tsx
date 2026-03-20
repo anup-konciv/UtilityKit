@@ -33,18 +33,20 @@ export default function ScreenShell({
   const accent = accentColor ?? colors.accent;
 
   const header = (
-    <View style={styles.header}>
-      <TouchableOpacity
-        onPress={() => router.back()}
-        style={[styles.backBtn, { backgroundColor: colors.surface }]}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      >
-        <Ionicons name="chevron-back" size={22} color={colors.text} />
-      </TouchableOpacity>
-      <Text style={[styles.title, { color: accent }]} numberOfLines={1}>
-        {title}
-      </Text>
-      <View style={styles.rightSlot}>{rightAction ?? <View style={{ width: 38 }} />}</View>
+    <View style={styles.headerWrapper}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={[styles.backBtn, { backgroundColor: colors.surface }]}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="chevron-back" size={22} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={[styles.title, { color: accent }]} numberOfLines={1}>
+          {title}
+        </Text>
+        <View style={styles.rightSlot}>{rightAction ?? <View style={{ width: 38 }} />}</View>
+      </View>
     </View>
   );
 
@@ -70,15 +72,21 @@ export default function ScreenShell({
 const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
   StyleSheet.create({
     root: { flex: 1 },
+    headerWrapper: {
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      backgroundColor: colors.surface,
+      width: '100%',
+    },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
       paddingHorizontal: Spacing.lg,
       paddingVertical: Spacing.md,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-      backgroundColor: colors.surface,
       gap: Spacing.sm,
+      width: '100%',
+      maxWidth: 800,
+      alignSelf: 'center',
     },
     backBtn: {
       width: 38,
@@ -97,6 +105,18 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
     },
     rightSlot: { width: 38, alignItems: 'flex-end' },
     scroll: { flex: 1 },
-    scrollContent: { padding: Spacing.lg, paddingBottom: Spacing.huge },
-    flat: { flex: 1, padding: Spacing.lg },
+    scrollContent: { 
+      padding: Spacing.lg, 
+      paddingBottom: Spacing.huge,
+      width: '100%',
+      maxWidth: 800,
+      alignSelf: 'center',
+    },
+    flat: { 
+      flex: 1, 
+      padding: Spacing.lg,
+      width: '100%',
+      maxWidth: 800,
+      alignSelf: 'center',
+    },
   });
