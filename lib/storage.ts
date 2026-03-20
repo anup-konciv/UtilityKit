@@ -17,6 +17,11 @@ export const KEYS = {
   toolOrder: 'uk_tool_order',
   favorites: 'uk_favorites',
   gymWeeklyGoal: 'uk_gym_weekly_goal',
+  pomodoroSettings: 'uk_pomodoro_settings',
+  pomodoroToday: 'uk_pomodoro_today',
+  habits: 'uk_habits',
+  habitLogs: 'uk_habit_logs',
+  worldClocks: 'uk_world_clocks',
 } as const;
 
 export async function loadJSON<T>(key: string, fallback: T): Promise<T> {
