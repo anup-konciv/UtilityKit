@@ -22,6 +22,12 @@ export const KEYS = {
   habits: 'uk_habits',
   habitLogs: 'uk_habit_logs',
   worldClocks: 'uk_world_clocks',
+  flashcards: 'uk_flashcards',
+  passwordHistory: 'uk_password_history',
+  currencyFavorites: 'uk_currency_favorites',
+  expenseCurrency: 'uk_expense_currency',
+  hapticsEnabled: 'uk_haptics_enabled',
+  defaultUnits: 'uk_default_units',
 } as const;
 
 export async function loadJSON<T>(key: string, fallback: T): Promise<T> {

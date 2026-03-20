@@ -19,6 +19,36 @@ const HARMONIES = [
   { name: 'Split Comp', offsets: [150, 210] },
 ];
 
+// WCAG contrast ratio calculation
+function luminance(r: number, g: number, b: number): number {
+  const [rs, gs, bs] = [r, g, b].map(c => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
+}
+
+function contrastRatio(r1: number, g1: number, b1: number, r2: number, g2: number, b2: number): number {
+  const l1 = luminance(r1, g1, b1);
+  const l2 = luminance(r2, g2, b2);
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function wcagRating(ratio: number): { aa: boolean; aaa: boolean; aaLarge: boolean; aaaLarge: boolean } {
+  return { aa: ratio >= 4.5, aaa: ratio >= 7, aaLarge: ratio >= 3, aaaLarge: ratio >= 4.5 };
+}
+
+function generateShades(h: number, s: number, l: number): string[] {
+  const shades: string[] = [];
+  for (let i = 0; i <= 9; i++) {
+    const newL = Math.round(95 - (i * 9)); // 95 to 5
+    shades.push(hslToHex(h, s, Math.max(5, Math.min(95, newL))));
+  }
+  return shades;
+}
+
 export default function ColorToolsScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -179,6 +209,109 @@ export default function ColorToolsScreen() {
           </View>
         ))}
       </View>
+
+      {/* Shades & Tints */}
+      <Text style={[styles.secLabel, { marginTop: Spacing.lg, marginBottom: Spacing.sm }]}>Shades & Tints</Text>
+      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.shadesRow}>
+          {generateShades(hsl.h, hsl.s, hsl.l).map((shade, i) => (
+            <TouchableOpacity
+              key={i}
+              style={[styles.shadeSwatch, { backgroundColor: shade }]}
+              onPress={() => applyHex(shade)}
+            />
+          ))}
+        </View>
+        <Text style={[styles.fmtText, { color: colors.textMuted }]}>Tap a shade to apply</Text>
+      </View>
+
+      {/* Contrast Checker */}
+      <Text style={[styles.secLabel, { marginTop: Spacing.lg, marginBottom: Spacing.sm }]}>Contrast Checker</Text>
+      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        {/* vs White */}
+        {(() => {
+          const rv = parseInt(r) || 0, gv = parseInt(g) || 0, bv = parseInt(b) || 0;
+          const ratioWhite = contrastRatio(rv, gv, bv, 255, 255, 255);
+          const ratioBlack = contrastRatio(rv, gv, bv, 0, 0, 0);
+          const ratingWhite = wcagRating(ratioWhite);
+          const ratingBlack = wcagRating(ratioBlack);
+          return (
+            <>
+              <View style={styles.contrastRow}>
+                <View style={[styles.contrastPreview, { backgroundColor: hex }]}>
+                  <Text style={[styles.contrastText, { color: '#fff' }]}>Aa</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.contrastLabel, { color: colors.text }]}>vs White — {ratioWhite.toFixed(2)}:1</Text>
+                  <View style={styles.wcagRow}>
+                    <View style={[styles.wcagBadge, { backgroundColor: ratingWhite.aa ? '#10B981' : '#EF4444' }]}>
+                      <Text style={styles.wcagText}>AA</Text>
+                    </View>
+                    <View style={[styles.wcagBadge, { backgroundColor: ratingWhite.aaa ? '#10B981' : '#EF4444' }]}>
+                      <Text style={styles.wcagText}>AAA</Text>
+                    </View>
+                    <View style={[styles.wcagBadge, { backgroundColor: ratingWhite.aaLarge ? '#10B981' : '#EF4444' }]}>
+                      <Text style={styles.wcagText}>AA+</Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+              <View style={styles.contrastRow}>
+                <View style={[styles.contrastPreview, { backgroundColor: hex }]}>
+                  <Text style={[styles.contrastText, { color: '#000' }]}>Aa</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.contrastLabel, { color: colors.text }]}>vs Black — {ratioBlack.toFixed(2)}:1</Text>
+                  <View style={styles.wcagRow}>
+                    <View style={[styles.wcagBadge, { backgroundColor: ratingBlack.aa ? '#10B981' : '#EF4444' }]}>
+                      <Text style={styles.wcagText}>AA</Text>
+                    </View>
+                    <View style={[styles.wcagBadge, { backgroundColor: ratingBlack.aaa ? '#10B981' : '#EF4444' }]}>
+                      <Text style={styles.wcagText}>AAA</Text>
+                    </View>
+                    <View style={[styles.wcagBadge, { backgroundColor: ratingBlack.aaLarge ? '#10B981' : '#EF4444' }]}>
+                      <Text style={styles.wcagText}>AA+</Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            </>
+          );
+        })()}
+      </View>
+
+      {/* CSS Gradient */}
+      <Text style={[styles.secLabel, { marginTop: Spacing.lg, marginBottom: Spacing.sm }]}>CSS Gradient</Text>
+      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        {(() => {
+          const comp = hslToHex(hsl.h + 180, hsl.s, hsl.l);
+          const grad1 = `linear-gradient(135deg, ${hex}, ${comp})`;
+          const lighter = hslToHex(hsl.h, Math.max(hsl.s - 10, 0), Math.min(hsl.l + 20, 95));
+          const grad2 = `linear-gradient(135deg, ${hex}, ${lighter})`;
+          return (
+            <>
+              <View style={styles.gradientPreviewRow}>
+                <View style={[styles.gradientPreview, { backgroundColor: hex }]}>
+                  <View style={[styles.gradientOverlay, { backgroundColor: comp, opacity: 0.6, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }]} />
+                </View>
+                <TouchableOpacity style={[styles.copyBtn, { backgroundColor: '#EC489920' }]} onPress={() => copyText(grad1, 'Gradient')}>
+                  <Ionicons name="copy-outline" size={14} color="#EC4899" />
+                </TouchableOpacity>
+              </View>
+              <Text style={[styles.cssText, { color: colors.textMuted }]} selectable>{grad1}</Text>
+              <View style={[styles.gradientPreviewRow, { marginTop: Spacing.md }]}>
+                <View style={[styles.gradientPreview, { backgroundColor: hex }]}>
+                  <View style={[styles.gradientOverlay, { backgroundColor: lighter, opacity: 0.6, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }]} />
+                </View>
+                <TouchableOpacity style={[styles.copyBtn, { backgroundColor: '#EC489920' }]} onPress={() => copyText(grad2, 'Gradient')}>
+                  <Ionicons name="copy-outline" size={14} color="#EC4899" />
+                </TouchableOpacity>
+              </View>
+              <Text style={[styles.cssText, { color: colors.textMuted }]} selectable>{grad2}</Text>
+            </>
+          );
+        })()}
+      </View>
     </ScreenShell>
   );
 }
@@ -207,4 +340,17 @@ const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
     harmonyLabel: { fontSize: 14, fontFamily: Fonts.medium },
     harmonySwatches: { flexDirection: 'row', gap: Spacing.sm },
     harmonySwatch: { width: 32, height: 32, borderRadius: 16 },
+    shadesRow: { flexDirection: 'row', gap: 4, marginBottom: Spacing.sm },
+    shadeSwatch: { flex: 1, height: 40, borderRadius: Radii.sm },
+    contrastRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.md },
+    contrastPreview: { width: 52, height: 52, borderRadius: Radii.md, alignItems: 'center', justifyContent: 'center' },
+    contrastText: { fontSize: 20, fontFamily: Fonts.bold },
+    contrastLabel: { fontSize: 13, fontFamily: Fonts.semibold, marginBottom: 4 },
+    wcagRow: { flexDirection: 'row', gap: 4 },
+    wcagBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radii.sm },
+    wcagText: { fontSize: 10, fontFamily: Fonts.bold, color: '#fff' },
+    gradientPreviewRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+    gradientPreview: { flex: 1, height: 40, borderRadius: Radii.md, overflow: 'hidden', flexDirection: 'row' },
+    gradientOverlay: { flex: 1 },
+    cssText: { fontSize: 11, fontFamily: 'monospace', marginTop: 4, lineHeight: 16 },
   });

@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
+import { loadJSON, KEYS } from '@/lib/storage';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 type Unit = 'metric' | 'imperial';
@@ -18,6 +19,13 @@ export default function BMICalculatorScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const [unit, setUnit] = useState<Unit>('metric');
+
+  // Apply default units preference from Settings
+  useEffect(() => {
+    loadJSON<'metric' | 'imperial'>(KEYS.defaultUnits, 'metric').then(pref => {
+      setUnit(pref);
+    });
+  }, []);
   const [height, setHeight] = useState('170');
   const [weight, setWeight] = useState('70');
   const [heightFt, setHeightFt] = useState('5');

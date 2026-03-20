@@ -31,6 +31,74 @@ function toSnakeCase(text: string): string {
     .toLowerCase();
 }
 
+function toKebabCase(text: string): string {
+  return text
+    .replace(/([a-z])([A-Z])/g, '$1-$2')
+    .replace(/\s+/g, '-')
+    .toLowerCase();
+}
+
+function removeDuplicateLines(text: string): string {
+  const lines = text.split('\n');
+  return [...new Set(lines)].join('\n');
+}
+
+function sortLines(text: string, desc = false): string {
+  const lines = text.split('\n');
+  lines.sort((a, b) => desc ? b.localeCompare(a) : a.localeCompare(b));
+  return lines.join('\n');
+}
+
+function addLineNumbers(text: string): string {
+  return text.split('\n').map((line, i) => `${i + 1}. ${line}`).join('\n');
+}
+
+function removeExtraSpaces(text: string): string {
+  return text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function toBase64(text: string): string {
+  try {
+    // Use a simple base64 encoding that works in RN
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    let result = '';
+    const bytes = Array.from(text).map(c => c.charCodeAt(0));
+    for (let i = 0; i < bytes.length; i += 3) {
+      const b1 = bytes[i], b2 = bytes[i + 1] ?? 0, b3 = bytes[i + 2] ?? 0;
+      result += chars[b1 >> 2] + chars[((b1 & 3) << 4) | (b2 >> 4)] +
+        (i + 1 < bytes.length ? chars[((b2 & 15) << 2) | (b3 >> 6)] : '=') +
+        (i + 2 < bytes.length ? chars[b3 & 63] : '=');
+    }
+    return result;
+  } catch { return text; }
+}
+
+function fromBase64(text: string): string {
+  try {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    const cleaned = text.replace(/[^A-Za-z0-9+/=]/g, '');
+    let result = '';
+    for (let i = 0; i < cleaned.length; i += 4) {
+      const b1 = chars.indexOf(cleaned[i]), b2 = chars.indexOf(cleaned[i + 1]);
+      const b3 = chars.indexOf(cleaned[i + 2]), b4 = chars.indexOf(cleaned[i + 3]);
+      result += String.fromCharCode((b1 << 2) | (b2 >> 4));
+      if (b3 !== -1 && cleaned[i + 2] !== '=') result += String.fromCharCode(((b2 & 15) << 4) | (b3 >> 2));
+      if (b4 !== -1 && cleaned[i + 3] !== '=') result += String.fromCharCode(((b3 & 3) << 6) | b4);
+    }
+    return result;
+  } catch { return text; }
+}
+
+function urlEncode(text: string): string {
+  return encodeURIComponent(text);
+}
+
+function urlDecode(text: string): string {
+  try { return decodeURIComponent(text); } catch { return text; }
+}
+
+const LOREM = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.';
+
 export default function TextToolsScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -60,7 +128,23 @@ export default function TextToolsScreen() {
     { label: 'Title Case', fn: (t) => toTitleCase(t) },
     { label: 'camelCase', fn: (t) => toCamelCase(t) },
     { label: 'snake_case', fn: (t) => toSnakeCase(t) },
+    { label: 'kebab-case', fn: (t) => toKebabCase(t) },
     { label: 'Reverse', fn: (t) => t.split('').reverse().join('') },
+  ];
+
+  const lineTools: { label: string; fn: (t: string) => string }[] = [
+    { label: 'Sort A→Z', fn: (t) => sortLines(t) },
+    { label: 'Sort Z→A', fn: (t) => sortLines(t, true) },
+    { label: 'Remove Dupes', fn: (t) => removeDuplicateLines(t) },
+    { label: 'Line Numbers', fn: (t) => addLineNumbers(t) },
+    { label: 'Trim Spaces', fn: (t) => removeExtraSpaces(t) },
+  ];
+
+  const encodingTools: { label: string; fn: (t: string) => string }[] = [
+    { label: 'Base64 Encode', fn: (t) => toBase64(t) },
+    { label: 'Base64 Decode', fn: (t) => fromBase64(t) },
+    { label: 'URL Encode', fn: (t) => urlEncode(t) },
+    { label: 'URL Decode', fn: (t) => urlDecode(t) },
   ];
 
   const handleCopy = async () => {
@@ -160,6 +244,47 @@ export default function TextToolsScreen() {
           <Text style={styles.actionBtnText}>Clear</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Line Tools */}
+      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={styles.sectionTitle}>Line Tools</Text>
+        <View style={styles.transformGrid}>
+          {lineTools.map((t) => (
+            <TouchableOpacity
+              key={t.label}
+              style={[styles.transformBtn, { backgroundColor: '#8B5CF6' + '18' }]}
+              onPress={() => setText(t.fn(text))}
+            >
+              <Text style={[styles.transformBtnText, { color: '#8B5CF6' }]}>{t.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      {/* Encoding Tools */}
+      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={styles.sectionTitle}>Encode / Decode</Text>
+        <View style={styles.transformGrid}>
+          {encodingTools.map((t) => (
+            <TouchableOpacity
+              key={t.label}
+              style={[styles.transformBtn, { backgroundColor: '#F97316' + '18' }]}
+              onPress={() => setText(t.fn(text))}
+            >
+              <Text style={[styles.transformBtnText, { color: '#F97316' }]}>{t.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      {/* Lorem Ipsum Generator */}
+      <TouchableOpacity
+        style={[styles.loremBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+        onPress={() => setText(LOREM)}
+      >
+        <Ionicons name="document-text-outline" size={16} color={ACCENT} />
+        <Text style={[styles.loremBtnText, { color: ACCENT }]}>Generate Lorem Ipsum</Text>
+      </TouchableOpacity>
 
       {/* Find & Replace */}
       <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -314,5 +439,19 @@ const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
       fontSize: 14,
       fontFamily: Fonts.bold,
       color: '#fff',
+    },
+    loremBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: Spacing.sm,
+      paddingVertical: Spacing.md,
+      borderRadius: Radii.lg,
+      borderWidth: 1,
+      marginBottom: Spacing.lg,
+    },
+    loremBtnText: {
+      fontSize: 14,
+      fontFamily: Fonts.semibold,
     },
   });

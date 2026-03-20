@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  ScrollView, StyleSheet, Modal, Alert, Dimensions,
+  ScrollView, StyleSheet, Modal, Alert, Dimensions, Share,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
@@ -11,6 +12,19 @@ import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 const ACCENT = '#6366F1';
 const { width: SW } = Dimensions.get('window');
+
+const CURRENCY_SYMBOLS = [
+  { symbol: '₹', label: 'INR (₹)' },
+  { symbol: '$', label: 'USD ($)' },
+  { symbol: '€', label: 'EUR (€)' },
+  { symbol: '£', label: 'GBP (£)' },
+  { symbol: '¥', label: 'JPY (¥)' },
+  { symbol: 'A$', label: 'AUD (A$)' },
+  { symbol: 'C$', label: 'CAD (C$)' },
+  { symbol: '₩', label: 'KRW (₩)' },
+  { symbol: '฿', label: 'THB (฿)' },
+  { symbol: 'R$', label: 'BRL (R$)' },
+];
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Expense = { id: string; amount: number; categoryId: string; note: string; date: string };
@@ -78,15 +92,29 @@ function last6Months(): string[] {
   }
   return res;
 }
+let _curSym = '₹';
+function setCurSym(s: string) { _curSym = s; }
 function fmtINR(n: number) {
-  if (!isFinite(n) || n === 0) return '₹0';
-  if (n >= 10_000_000) return `₹${(n/10_000_000).toFixed(1)}Cr`;
-  if (n >= 100_000)    return `₹${(n/100_000).toFixed(1)}L`;
-  if (n >= 1_000)      return `₹${(n/1_000).toFixed(1)}K`;
-  return `₹${Math.round(n).toLocaleString('en-IN')}`;
+  if (!isFinite(n) || n === 0) return `${_curSym}0`;
+  if (n >= 10_000_000) return `${_curSym}${(n/10_000_000).toFixed(1)}Cr`;
+  if (n >= 100_000)    return `${_curSym}${(n/100_000).toFixed(1)}L`;
+  if (n >= 1_000)      return `${_curSym}${(n/1_000).toFixed(1)}K`;
+  return `${_curSym}${Math.round(n).toLocaleString()}`;
 }
 function fmtFull(n: number) {
-  return `₹${Math.round(n).toLocaleString('en-IN')}`;
+  return `${_curSym}${Math.round(n).toLocaleString()}`;
+}
+
+function expensesToCSV(expenses: Expense[]): string {
+  const header = 'Date,Amount,Category,Note';
+  const rows = [...expenses]
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .map(e => {
+      const cat = getCat(e.categoryId);
+      const note = e.note.replace(/"/g, '""');
+      return `${e.date},${e.amount},${cat.label},"${note}"`;
+    });
+  return [header, ...rows].join('\n');
 }
 
 // ── Add / Edit Sheet ──────────────────────────────────────────────────────────
@@ -657,10 +685,13 @@ export default function ExpenseTrackerScreen() {
   const [month,        setMonth]        = useState(currentMonthKey());
   const [addSheet,     setAddSheet]     = useState<{ visible: boolean; editing: Expense | null }>({ visible: false, editing: null });
   const [budgetModal,  setBudgetModal]  = useState(false);
+  const [currencySymbol, setCurrencySymbol] = useState('₹');
+  const [showCurrency, setShowCurrency] = useState(false);
 
   useEffect(() => {
     loadJSON<Expense[]>(KEYS.expenses, []).then(setExpenses);
     loadJSON<number>(KEYS.expenseBudget, 0).then(setBudget);
+    loadJSON<string>(KEYS.expenseCurrency, '₹').then(s => { setCurrencySymbol(s); setCurSym(s); });
   }, []);
 
   const persistExpenses = (next: Expense[]) => { setExpenses(next); saveJSON(KEYS.expenses, next); };
@@ -674,27 +705,48 @@ export default function ExpenseTrackerScreen() {
 
   return (
     <ScreenShell title="Expense Tracker" accentColor={ACCENT} scrollable={false}>
-      {/* Tab bar */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={[ms.tabScroll, { borderBottomColor: colors.border }]}
-        contentContainerStyle={ms.tabBar}
-      >
-        {TABS.map(t => {
-          const active = tab === t.id;
-          return (
-            <TouchableOpacity
-              key={t.id}
-              style={[ms.tab, active && { borderBottomColor: ACCENT }]}
-              onPress={() => setTab(t.id)}
-            >
-              <Ionicons name={t.icon as any} size={15} color={active ? ACCENT : colors.textMuted} />
-              <Text style={[ms.tabLabel, { color: active ? ACCENT : colors.textMuted }]}>{t.label}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+      {/* Tab bar + Actions */}
+      <View style={[ms.tabRow, { borderBottomColor: colors.border }]}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={ms.tabScroll}
+          contentContainerStyle={ms.tabBar}
+        >
+          {TABS.map(t => {
+            const active = tab === t.id;
+            return (
+              <TouchableOpacity
+                key={t.id}
+                style={[ms.tab, active && { borderBottomColor: ACCENT }]}
+                onPress={() => setTab(t.id)}
+              >
+                <Ionicons name={t.icon as any} size={15} color={active ? ACCENT : colors.textMuted} />
+                <Text style={[ms.tabLabel, { color: active ? ACCENT : colors.textMuted }]}>{t.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+        <View style={{ flexDirection: 'row', gap: 4, paddingRight: 4 }}>
+          <TouchableOpacity
+            style={{ padding: 8 }}
+            onPress={() => setShowCurrency(true)}
+          >
+            <Text style={{ fontSize: 16, fontFamily: Fonts.bold, color: ACCENT }}>{currencySymbol}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ padding: 8 }}
+            onPress={async () => {
+              if (expenses.length === 0) { Alert.alert('No Data', 'No expenses to export.'); return; }
+              const csv = expensesToCSV(expenses);
+              await Clipboard.setStringAsync(csv);
+              Alert.alert('CSV Copied', `${expenses.length} expenses copied to clipboard as CSV. Paste into a spreadsheet or text file.`);
+            }}
+          >
+            <Ionicons name="download-outline" size={18} color={ACCENT} />
+          </TouchableOpacity>
+        </View>
+      </View>
 
       {/* Content */}
       <View style={{ flex: 1 }}>
@@ -745,12 +797,47 @@ export default function ExpenseTrackerScreen() {
           colors={colors}
         />
       )}
+
+      {/* Currency Selector Modal */}
+      <Modal visible={showCurrency} transparent animationType="fade" onRequestClose={() => setShowCurrency(false)}>
+        <View style={bm.overlay}>
+          <View style={[bm.box, { backgroundColor: colors.card }]}>
+            <Text style={[bm.title, { color: colors.text }]}>Currency Symbol</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: Spacing.lg }}>
+              {CURRENCY_SYMBOLS.map(c => (
+                <TouchableOpacity
+                  key={c.symbol}
+                  style={[{
+                    paddingHorizontal: 14, paddingVertical: 8, borderRadius: Radii.md,
+                    borderWidth: 1.5, borderColor: currencySymbol === c.symbol ? ACCENT : colors.border,
+                    backgroundColor: currencySymbol === c.symbol ? ACCENT + '18' : colors.inputBg,
+                  }]}
+                  onPress={() => {
+                    setCurrencySymbol(c.symbol);
+                    setCurSym(c.symbol);
+                    saveJSON(KEYS.expenseCurrency, c.symbol);
+                    setShowCurrency(false);
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontFamily: Fonts.semibold, color: currencySymbol === c.symbol ? ACCENT : colors.text }}>
+                    {c.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity style={[bm.cancelBtn, { borderColor: colors.border }]} onPress={() => setShowCurrency(false)}>
+              <Text style={[bm.cancelTxt, { color: colors.textMuted }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScreenShell>
   );
 }
 
 const ms = StyleSheet.create({
-  tabScroll: { borderBottomWidth: 1, flexGrow: 0 },
+  tabRow:    { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1 },
+  tabScroll: { flex: 1, flexGrow: 0 },
   tabBar:    { gap: 4 },
   tab:       { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 12, paddingHorizontal: 10, borderBottomWidth: 2, borderBottomColor: 'transparent' },
   tabLabel:  { fontFamily: Fonts.semibold, fontSize: 13 },

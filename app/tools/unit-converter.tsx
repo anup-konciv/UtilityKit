@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
+import { loadJSON, KEYS } from '@/lib/storage';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 type UnitDef = { label: string; toBase: (v: number) => number; fromBase: (v: number) => number };
@@ -105,7 +106,37 @@ const CATEGORIES: Category[] = [
       { label: 'Bit', toBase: v => v / 8, fromBase: v => v * 8 },
     ],
   },
+  {
+    name: 'Pressure',
+    units: [
+      { label: 'Pascal', toBase: v => v, fromBase: v => v },
+      { label: 'kPa', toBase: v => v * 1000, fromBase: v => v / 1000 },
+      { label: 'Bar', toBase: v => v * 100000, fromBase: v => v / 100000 },
+      { label: 'Atm', toBase: v => v * 101325, fromBase: v => v / 101325 },
+      { label: 'PSI', toBase: v => v * 6894.76, fromBase: v => v / 6894.76 },
+      { label: 'mmHg', toBase: v => v * 133.322, fromBase: v => v / 133.322 },
+      { label: 'Torr', toBase: v => v * 133.322, fromBase: v => v / 133.322 },
+    ],
+  },
+  {
+    name: 'Fuel',
+    units: [
+      { label: 'km/L', toBase: v => v, fromBase: v => v },
+      { label: 'L/100km', toBase: v => v === 0 ? 0 : 100 / v, fromBase: v => v === 0 ? 0 : 100 / v },
+      { label: 'MPG (US)', toBase: v => v * 0.425144, fromBase: v => v / 0.425144 },
+      { label: 'MPG (UK)', toBase: v => v * 0.354006, fromBase: v => v / 0.354006 },
+    ],
+  },
 ];
+
+// Map default units preference to initial category & unit indices
+const IMPERIAL_DEFAULTS: Record<string, { from: number; to: number }> = {
+  0: { from: 6, to: 0 },  // Length: Foot → Meter
+  1: { from: 3, to: 0 },  // Weight: Pound → Kilogram
+  2: { from: 1, to: 0 },  // Temperature: Fahrenheit → Celsius
+  3: { from: 2, to: 0 },  // Speed: mph → m/s
+  4: { from: 3, to: 0 },  // Volume: Gallon → Cubic m
+};
 
 export default function UnitConverterScreen() {
   const { colors } = useAppTheme();
@@ -114,6 +145,18 @@ export default function UnitConverterScreen() {
   const [fromIdx, setFromIdx] = useState(0);
   const [toIdx, setToIdx] = useState(1);
   const [value, setValue] = useState('1');
+  const [loaded, setLoaded] = useState(false);
+
+  // Apply default units preference on first load
+  useEffect(() => {
+    loadJSON<'metric' | 'imperial'>(KEYS.defaultUnits, 'metric').then(pref => {
+      if (pref === 'imperial') {
+        const imp = IMPERIAL_DEFAULTS[0];
+        if (imp) { setFromIdx(imp.from); setToIdx(imp.to); }
+      }
+      setLoaded(true);
+    });
+  }, []);
 
   const cat = CATEGORIES[catIdx];
 
