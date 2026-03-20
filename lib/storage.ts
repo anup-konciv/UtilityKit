@@ -28,6 +28,16 @@ export const KEYS = {
   expenseCurrency: 'uk_expense_currency',
   hapticsEnabled: 'uk_haptics_enabled',
   defaultUnits: 'uk_default_units',
+  tallyCounters: 'uk_tally_counters',
+  countdownEvents: 'uk_countdown_events',
+  savingsGoals: 'uk_savings_goals',
+  moodJournal: 'uk_mood_journal',
+  calorieLog: 'uk_calorie_log',
+  calorieGoal: 'uk_calorie_goal',
+  sleepLog: 'uk_sleep_log',
+  cookTracker: 'uk_cook_tracker',
+  maidTracker: 'uk_maid_tracker',
+  milkTracker: 'uk_milk_tracker',
 } as const;
 
 export async function loadJSON<T>(key: string, fallback: T): Promise<T> {

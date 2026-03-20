@@ -253,7 +253,7 @@ export default function SettingsScreen() {
       <Text style={styles.sectionLabel}>About</Text>
       <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={styles.infoTitle}>UtilityKit</Text>
-        <Text style={styles.infoDesc}>34+ utilities in a single app — Calculator, Finance, Health, Notes, Weather, and more.</Text>
+        <Text style={styles.infoDesc}>54+ utilities in a single app — Calculator, Finance, Health, Notes, Weather, and more.</Text>
         <Text style={[styles.infoVersion, { color: colors.textMuted }]}>Version 1.1.0</Text>
       </View>
     </ScreenShell>
