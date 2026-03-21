@@ -33,7 +33,7 @@ export const TOOLS: ToolMeta[] = [
     description: 'Loan EMI & schedule',
     icon: 'cash-outline',
     route: '/tools/emi-calculator',
-    accent: '#10B981',
+    accent: '#6366F1',
     badge: 'Finance',
   },
   {

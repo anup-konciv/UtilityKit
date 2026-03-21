@@ -5,8 +5,8 @@ import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
-const ACCENT = '#10B981';
-const ACCENT2 = '#059669';
+const ACCENT = '#6366F1';
+const ACCENT2 = '#4F46E5';
 const INTEREST_CLR = '#F59E0B';
 const PRINCIPAL_CLR = '#3B82F6';
 
