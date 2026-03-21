@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
@@ -8,25 +8,13 @@ import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
-const ACCENT = '#7C3AED';
-
-const WEEKDAYS_CAL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-function buildCalWeeks(y: number, m: number): (number | null)[][] {
-  const dow = new Date(y, m, 1).getDay();
-  const dim = new Date(y, m + 1, 0).getDate();
-  const flat: (number | null)[] = [];
-  for (let i = 0; i < dow; i++) flat.push(null);
-  for (let d = 1; d <= dim; d++) flat.push(d);
-  while (flat.length % 7 !== 0) flat.push(null);
-  const weeks: (number | null)[][] = [];
-  for (let i = 0; i < flat.length; i += 7) weeks.push(flat.slice(i, i + 7));
-  return weeks;
-}
+const ACCENT = '#2563EB';
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 type AttendanceStatus = 'present' | 'absent' | 'half';
 type DayRecord = { date: string; status: AttendanceStatus };
 type PaymentRecord = { id: string; date: string; amount: number; note: string };
-type MaidData = {
+type DriverData = {
   name: string;
   monthlySalary: number;
   attendance: DayRecord[];
@@ -53,6 +41,18 @@ function getDayName(dateStr: string): string {
   return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(dateStr + 'T00:00:00').getDay()];
 }
 
+function buildCalWeeks(y: number, m: number): (number | null)[][] {
+  const dow = new Date(y, m, 1).getDay();
+  const dim = new Date(y, m + 1, 0).getDate();
+  const flat: (number | null)[] = [];
+  for (let i = 0; i < dow; i++) flat.push(null);
+  for (let d = 1; d <= dim; d++) flat.push(d);
+  while (flat.length % 7 !== 0) flat.push(null);
+  const weeks: (number | null)[][] = [];
+  for (let i = 0; i < flat.length; i += 7) weeks.push(flat.slice(i, i + 7));
+  return weeks;
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const STATUS_CONFIG = {
@@ -61,12 +61,12 @@ const STATUS_CONFIG = {
   half: { icon: 'remove-circle' as const, color: '#F59E0B', label: 'H' },
 };
 
-export default function MaidTrackerScreen() {
+export default function DriverTrackerScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const [data, setData] = useState<MaidData>({
-    name: 'Maid',
+  const [data, setData] = useState<DriverData>({
+    name: 'Driver',
     monthlySalary: 0,
     attendance: [],
     payments: [],
@@ -78,15 +78,15 @@ export default function MaidTrackerScreen() {
   const [payAmount, setPayAmount] = useState('');
   const [payNote, setPayNote] = useState('');
   const [payDate, setPayDate] = useState(todayISO());
-  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [viewMonth, setViewMonth] = useState(() => {
     const d = new Date();
     return { year: d.getFullYear(), month: d.getMonth() };
   });
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
 
   useEffect(() => {
-    loadJSON<MaidData>(KEYS.maidTracker, {
-      name: 'Maid',
+    loadJSON<DriverData>(KEYS.driverTracker, {
+      name: 'Driver',
       monthlySalary: 0,
       attendance: [],
       payments: [],
@@ -97,9 +97,9 @@ export default function MaidTrackerScreen() {
     });
   }, []);
 
-  const persist = useCallback((d: MaidData) => {
+  const persist = useCallback((d: DriverData) => {
     setData(d);
-    saveJSON(KEYS.maidTracker, d);
+    saveJSON(KEYS.driverTracker, d);
   }, []);
 
   const toggleAttendance = (dateStr: string) => {
@@ -119,16 +119,18 @@ export default function MaidTrackerScreen() {
   };
 
   const saveSettings = () => {
-    persist({ ...data, name: nameInput.trim() || 'Maid', monthlySalary: parseFloat(salaryInput) || 0 });
+    persist({ ...data, name: nameInput.trim() || 'Driver', monthlySalary: parseFloat(salaryInput) || 0 });
     setShowSettings(false);
   };
 
   const addPayment = () => {
     const amt = parseFloat(payAmount);
     if (!amt || amt <= 0) return;
-    const updated = [{ id: uid(), date: payDate, amount: amt, note: payNote.trim() }, ...data.payments].sort((a, b) => b.date.localeCompare(a.date));
-    persist({ ...data, payments: updated });
-    setPayAmount(''); setPayNote(''); setShowPayment(false);
+    const payment: PaymentRecord = { id: uid(), date: payDate, amount: amt, note: payNote.trim() };
+    persist({ ...data, payments: [payment, ...data.payments].sort((a, b) => b.date.localeCompare(a.date)) });
+    setPayAmount('');
+    setPayNote('');
+    setShowPayment(false);
   };
 
   const deletePayment = (id: string) => {
@@ -141,8 +143,7 @@ export default function MaidTrackerScreen() {
   const monthDays = getMonthDays(viewMonth.year, viewMonth.month);
   const today = todayISO();
 
-  const monthKey = `${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, '0')}`;
-  const monthAttendance = data.attendance.filter(a => a.date.startsWith(monthKey));
+  const monthAttendance = data.attendance.filter(a => a.date.startsWith(`${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, '0')}`));
   const presentDays = monthAttendance.filter(a => a.status === 'present').length;
   const halfDays = monthAttendance.filter(a => a.status === 'half').length;
   const absentDays = monthAttendance.filter(a => a.status === 'absent').length;
@@ -152,70 +153,121 @@ export default function MaidTrackerScreen() {
   const dailyRate = data.monthlySalary > 0 ? data.monthlySalary / totalDaysInMonth : 0;
   const monthEarned = dailyRate * effectiveDays;
 
-  const monthPayments = data.payments.filter(p => p.date.startsWith(monthKey));
+  const monthPayments = data.payments.filter(p => p.date.startsWith(`${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, '0')}`));
   const totalPaid = monthPayments.reduce((s, p) => s + p.amount, 0);
   const balance = monthEarned - totalPaid;
 
-  const prevMonth = () => setViewMonth(prev => prev.month === 0 ? { year: prev.year - 1, month: 11 } : { ...prev, month: prev.month - 1 });
-  const nextMonth = () => setViewMonth(prev => prev.month === 11 ? { year: prev.year + 1, month: 0 } : { ...prev, month: prev.month + 1 });
+  const prevMonth = () => {
+    setViewMonth(prev => prev.month === 0 ? { year: prev.year - 1, month: 11 } : { ...prev, month: prev.month - 1 });
+  };
+  const nextMonth = () => {
+    setViewMonth(prev => prev.month === 11 ? { year: prev.year + 1, month: 0 } : { ...prev, month: prev.month + 1 });
+  };
 
   const renderCalGrid = () => {
     const calWeeks = buildCalWeeks(viewMonth.year, viewMonth.month);
+    const monthPrefix = `${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, '0')}`;
+
     return (
-      <View style={[styles.calCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={styles.sectionTitle}>Attendance</Text>
-        <View style={styles.calLegendRow}>
-          <View style={styles.legendItemCal}>
-            <View style={[styles.legendDotCal, { backgroundColor: '#10B981' }]} />
-            <Text style={[styles.legendTextCal, { color: colors.textMuted }]}>Present</Text>
-          </View>
-          <View style={styles.legendItemCal}>
-            <View style={[styles.legendDotCal, { backgroundColor: '#EF4444' }]} />
-            <Text style={[styles.legendTextCal, { color: colors.textMuted }]}>Absent</Text>
-          </View>
-          <View style={styles.legendItemCal}>
-            <View style={[styles.legendDotCal, { backgroundColor: '#F59E0B' }]} />
-            <Text style={[styles.legendTextCal, { color: colors.textMuted }]}>Half Day</Text>
-          </View>
-        </View>
+      <View>
+        {/* Weekday Headers */}
         <View style={styles.weekRow}>
-          {WEEKDAYS_CAL.map(w => (
-            <View key={w} style={styles.weekCell}>
-              <Text style={[styles.weekText, { color: w === 'Sun' ? '#EF4444' : colors.textMuted }]}>{w}</Text>
+          {WEEKDAYS.map(wd => (
+            <View key={wd} style={styles.weekCell}>
+              <Text style={[styles.weekText, { color: wd === 'Sun' ? '#EF4444' : colors.textMuted }]}>{wd}</Text>
             </View>
           ))}
         </View>
+
+        {/* Calendar Grid */}
         {calWeeks.map((week, wi) => (
           <View key={wi} style={styles.calRow}>
-            {week.map((d, di) => {
-              if (d === null) {
-                return <View key={`empty-${wi}-${di}`} style={styles.calCellWrap} />;
+            {week.map((day, di) => {
+              if (day === null) {
+                return <View key={`empty-${wi}-${di}`} style={styles.calCell} />;
               }
-              const dateStr = `${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+              const dateStr = `${monthPrefix}-${String(day).padStart(2, '0')}`;
               const record = data.attendance.find(a => a.date === dateStr);
               const isToday = dateStr === today;
               const isFuture = dateStr > today;
-              const statusCfg = record ? STATUS_CONFIG[record.status] : null;
+
+              let bgColor = 'transparent';
+              let borderColor = 'transparent';
+              let label = '';
+              let labelColor = '';
+
+              if (record) {
+                if (record.status === 'present') {
+                  bgColor = '#10B98115';
+                  borderColor = '#10B981';
+                  label = 'P';
+                  labelColor = '#10B981';
+                } else if (record.status === 'absent') {
+                  bgColor = '#EF444415';
+                  borderColor = '#EF4444';
+                  label = 'A';
+                  labelColor = '#EF4444';
+                } else if (record.status === 'half') {
+                  bgColor = '#F59E0B15';
+                  borderColor = '#F59E0B';
+                  label = 'H';
+                  labelColor = '#F59E0B';
+                }
+              }
+
               return (
                 <TouchableOpacity
                   key={dateStr}
                   style={[
-                    styles.calCellWrap,
-                    statusCfg && { borderWidth: 1.5, borderColor: statusCfg.color, backgroundColor: statusCfg.color + '20', borderRadius: Radii.md },
-                    isFuture && { opacity: 0.35 },
+                    styles.calCell,
+                    {
+                      backgroundColor: bgColor,
+                      borderWidth: borderColor !== 'transparent' ? 1.5 : 0,
+                      borderColor: borderColor,
+                      borderRadius: Radii.md,
+                      opacity: isFuture ? 0.4 : 1,
+                    },
                   ]}
                   onPress={() => !isFuture && toggleAttendance(dateStr)}
                   onLongPress={() => !isFuture && record && clearDay(dateStr)}
                   disabled={isFuture}
                 >
-                  <Text style={[styles.calDayNum, { color: colors.text, fontFamily: Fonts.bold }]}>{d}</Text>
-                  {statusCfg && <Text style={[styles.calDayLabel, { color: statusCfg.color }]}>{statusCfg.label}</Text>}
-                  {isToday && <View style={[styles.todayDotCal, { backgroundColor: ACCENT }]} />}
+                  <Text style={[
+                    styles.calDayNum,
+                    {
+                      color: isToday && !record ? ACCENT : colors.text,
+                      fontFamily: isToday ? Fonts.bold : Fonts.regular,
+                    },
+                  ]}>
+                    {day}
+                  </Text>
+                  {label ? (
+                    <Text style={[styles.calDayLabel, { color: labelColor }]}>{label}</Text>
+                  ) : null}
+                  {isToday && !record && (
+                    <View style={[styles.todayDot, { backgroundColor: ACCENT }]} />
+                  )}
                 </TouchableOpacity>
               );
             })}
           </View>
         ))}
+
+        {/* Legend */}
+        <View style={styles.calLegend}>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#10B981' }]} />
+            <Text style={[styles.legendText, { color: colors.textMuted }]}>P=Present</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#EF4444' }]} />
+            <Text style={[styles.legendText, { color: colors.textMuted }]}>A=Absent</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} />
+            <Text style={[styles.legendText, { color: colors.textMuted }]}>H=Half Day</Text>
+          </View>
+        </View>
       </View>
     );
   };
@@ -286,69 +338,83 @@ export default function MaidTrackerScreen() {
         )}
       </View>
 
-      {/* View Toggle */}
-      <View style={[styles.viewToggle, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        {[
-          { k: 'list' as const, ic: 'list-outline', lb: 'List' },
-          { k: 'calendar' as const, ic: 'calendar-outline', lb: 'Calendar' },
-        ].map(v => (
-          <TouchableOpacity key={v.k} style={[styles.viewBtn, viewMode === v.k && { backgroundColor: ACCENT }]} onPress={() => setViewMode(v.k)}>
-            <Ionicons name={v.ic as any} size={15} color={viewMode === v.k ? '#fff' : colors.textMuted} />
-            <Text style={[styles.viewBtnText, { color: viewMode === v.k ? '#fff' : colors.textMuted }]}>{v.lb}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {viewMode === 'calendar' ? renderCalGrid() : (
+      {/* Attendance Section */}
       <View style={[styles.calCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={styles.sectionTitle}>Attendance</Text>
-        <View style={styles.legend}>
-          {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-            <View key={key} style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: cfg.color }]} />
-              <Text style={[styles.legendText, { color: colors.textMuted }]}>{key.charAt(0).toUpperCase() + key.slice(1)}</Text>
-            </View>
+
+        {/* View Toggle */}
+        <View style={[styles.viewToggle, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          {[
+            { k: 'list' as const, ic: 'list-outline', lb: 'List' },
+            { k: 'calendar' as const, ic: 'calendar-outline', lb: 'Calendar' },
+          ].map(v => (
+            <TouchableOpacity key={v.k} style={[styles.viewBtn, viewMode === v.k && { backgroundColor: ACCENT }]} onPress={() => setViewMode(v.k)}>
+              <Ionicons name={v.ic as any} size={15} color={viewMode === v.k ? '#fff' : colors.textMuted} />
+              <Text style={[styles.viewBtnText, { color: viewMode === v.k ? '#fff' : colors.textMuted }]}>{v.lb}</Text>
+            </TouchableOpacity>
           ))}
         </View>
 
-        {monthDays.map(dateStr => {
-          const record = data.attendance.find(a => a.date === dateStr);
-          const isToday = dateStr === today;
-          const isFuture = dateStr > today;
-          const day = parseInt(dateStr.slice(8));
-          const dayName = getDayName(dateStr);
-          const isSunday = dayName === 'Sun';
+        {viewMode === 'calendar' ? renderCalGrid() : (
+          <>
+            <View style={styles.legend}>
+              {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+                <View key={key} style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: cfg.color }]} />
+                  <Text style={[styles.legendText, { color: colors.textMuted }]}>{key.charAt(0).toUpperCase() + key.slice(1)}</Text>
+                </View>
+              ))}
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: colors.border }]} />
+                <Text style={[styles.legendText, { color: colors.textMuted }]}>Unmarked</Text>
+              </View>
+            </View>
 
-          return (
-            <TouchableOpacity
-              key={dateStr}
-              style={[styles.dayRow, { borderBottomColor: colors.border }, isToday && { backgroundColor: ACCENT + '10' }]}
-              onPress={() => !isFuture && toggleAttendance(dateStr)}
-              onLongPress={() => !isFuture && record && clearDay(dateStr)}
-              disabled={isFuture}
-            >
-              <View style={styles.dayLeft}>
-                <Text style={[styles.dayNum, { color: isSunday ? '#EF4444' : colors.text }, isFuture && { opacity: 0.4 }]}>{day}</Text>
-                <Text style={[styles.dayName, { color: isSunday ? '#EF4444' : colors.textMuted }, isFuture && { opacity: 0.4 }]}>{dayName}</Text>
-              </View>
-              {isToday && <View style={[styles.todayBadge, { backgroundColor: ACCENT }]}><Text style={styles.todayText}>Today</Text></View>}
-              <View style={styles.dayRight}>
-                {record ? (
-                  <View style={[styles.statusBadge, { backgroundColor: STATUS_CONFIG[record.status].color + '20' }]}>
-                    <Ionicons name={STATUS_CONFIG[record.status].icon} size={16} color={STATUS_CONFIG[record.status].color} />
-                    <Text style={[styles.statusText, { color: STATUS_CONFIG[record.status].color }]}>{STATUS_CONFIG[record.status].label}</Text>
+            {monthDays.map(dateStr => {
+              const record = data.attendance.find(a => a.date === dateStr);
+              const isToday = dateStr === today;
+              const isFuture = dateStr > today;
+              const day = parseInt(dateStr.slice(8));
+              const dayName = getDayName(dateStr);
+              const isSunday = dayName === 'Sun';
+
+              return (
+                <TouchableOpacity
+                  key={dateStr}
+                  style={[
+                    styles.dayRow,
+                    { borderBottomColor: colors.border },
+                    isToday && { backgroundColor: ACCENT + '10' },
+                  ]}
+                  onPress={() => !isFuture && toggleAttendance(dateStr)}
+                  onLongPress={() => !isFuture && record && clearDay(dateStr)}
+                  disabled={isFuture}
+                >
+                  <View style={styles.dayLeft}>
+                    <Text style={[styles.dayNum, { color: isSunday ? '#EF4444' : colors.text }, isFuture && { opacity: 0.4 }]}>{day}</Text>
+                    <Text style={[styles.dayName, { color: isSunday ? '#EF4444' : colors.textMuted }, isFuture && { opacity: 0.4 }]}>{dayName}</Text>
                   </View>
-                ) : isFuture ? (
-                  <Text style={[styles.unmarked, { color: colors.border }]}>—</Text>
-                ) : (
-                  <Text style={[styles.unmarked, { color: colors.textMuted }]}>Tap</Text>
-                )}
-              </View>
-            </TouchableOpacity>
-          );
-        })}
+                  {isToday && <View style={[styles.todayBadge, { backgroundColor: ACCENT }]}><Text style={styles.todayText}>Today</Text></View>}
+                  <View style={styles.dayRight}>
+                    {record ? (
+                      <View style={[styles.statusBadge, { backgroundColor: STATUS_CONFIG[record.status].color + '20' }]}>
+                        <Ionicons name={STATUS_CONFIG[record.status].icon} size={16} color={STATUS_CONFIG[record.status].color} />
+                        <Text style={[styles.statusText, { color: STATUS_CONFIG[record.status].color }]}>
+                          {STATUS_CONFIG[record.status].label}
+                        </Text>
+                      </View>
+                    ) : isFuture ? (
+                      <Text style={[styles.unmarked, { color: colors.border }]}>—</Text>
+                    ) : (
+                      <Text style={[styles.unmarked, { color: colors.textMuted }]}>Tap</Text>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </>
+        )}
       </View>
-      )}
 
       {/* Payment History */}
       {data.payments.length > 0 && (
@@ -373,16 +439,16 @@ export default function MaidTrackerScreen() {
       <Modal visible={showSettings} transparent animationType="fade" onRequestClose={() => setShowSettings(false)}>
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Maid Settings</Text>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Driver Settings</Text>
             <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Name</Text>
             <TextInput
               style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-              value={nameInput} onChangeText={setNameInput} placeholder="Maid name" placeholderTextColor={colors.textMuted} autoFocus
+              value={nameInput} onChangeText={setNameInput} placeholder="Driver name" placeholderTextColor={colors.textMuted} autoFocus
             />
             <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Monthly Salary</Text>
             <TextInput
               style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-              value={salaryInput} onChangeText={setSalaryInput} placeholder="e.g. 5000" placeholderTextColor={colors.textMuted} keyboardType="numeric"
+              value={salaryInput} onChangeText={setSalaryInput} placeholder="e.g. 8000" placeholderTextColor={colors.textMuted} keyboardType="numeric"
             />
             <View style={styles.modalBtns}>
               <TouchableOpacity style={[styles.modalBtn, { backgroundColor: colors.surface }]} onPress={() => setShowSettings(false)}>
@@ -443,6 +509,7 @@ export default function MaidTrackerScreen() {
                 btns.push({ label: 'Today', date: todayISO() });
                 d.setDate(d.getDate() - 1);
                 btns.push({ label: 'Yesterday', date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` });
+                // 1st of current month
                 const now = new Date();
                 btns.push({ label: `1st ${MONTHS[now.getMonth()]}`, date: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01` });
                 return btns;
@@ -545,6 +612,7 @@ const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
     modalBtns: { flexDirection: 'row', gap: Spacing.md },
     modalBtn: { flex: 1, paddingVertical: 12, borderRadius: Radii.md, alignItems: 'center' },
     modalBtnText: { fontSize: 15, fontFamily: Fonts.bold },
+    // Calendar grid styles
     viewToggle: { flexDirection: 'row', borderRadius: Radii.lg, borderWidth: 1, padding: 3, gap: 3, marginBottom: Spacing.md },
     viewBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8, borderRadius: Radii.md },
     viewBtnText: { fontSize: 13, fontFamily: Fonts.semibold },
@@ -552,12 +620,9 @@ const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
     weekCell: { flex: 1, alignItems: 'center', paddingVertical: 6 },
     weekText: { fontSize: 11, fontFamily: Fonts.semibold },
     calRow: { flexDirection: 'row' },
-    calCellWrap: { flex: 1, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
+    calCell: { flex: 1, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
     calDayNum: { fontSize: 14 },
     calDayLabel: { fontSize: 9, fontFamily: Fonts.bold, marginTop: 1 },
-    todayDotCal: { width: 4, height: 4, borderRadius: 2, marginTop: 2 },
-    calLegendRow: { flexDirection: 'row', justifyContent: 'center', gap: Spacing.lg, marginBottom: Spacing.lg },
-    legendItemCal: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    legendDotCal: { width: 8, height: 8, borderRadius: 4 },
-    legendTextCal: { fontSize: 11, fontFamily: Fonts.medium },
+    todayDot: { width: 4, height: 4, borderRadius: 2, marginTop: 2 },
+    calLegend: { flexDirection: 'row', justifyContent: 'center', gap: Spacing.lg, marginBottom: Spacing.lg },
   });

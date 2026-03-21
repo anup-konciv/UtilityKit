@@ -10,6 +10,20 @@ import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 const ACCENT = '#D97706';
 
+const WEEKDAYS_CAL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function buildCalWeeks(y: number, m: number): (number | null)[][] {
+  const dow = new Date(y, m, 1).getDay();
+  const dim = new Date(y, m + 1, 0).getDate();
+  const flat: (number | null)[] = [];
+  for (let i = 0; i < dow; i++) flat.push(null);
+  for (let d = 1; d <= dim; d++) flat.push(d);
+  while (flat.length % 7 !== 0) flat.push(null);
+  const weeks: (number | null)[][] = [];
+  for (let i = 0; i < flat.length; i += 7) weeks.push(flat.slice(i, i + 7));
+  return weeks;
+}
+
 type AttendanceStatus = 'present' | 'absent' | 'half';
 type DayRecord = { date: string; status: AttendanceStatus };
 type PaymentRecord = { id: string; date: string; amount: number; note: string };
@@ -65,6 +79,7 @@ export default function CookTrackerScreen() {
   const [payAmount, setPayAmount] = useState('');
   const [payNote, setPayNote] = useState('');
   const [payDate, setPayDate] = useState(todayISO());
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [viewMonth, setViewMonth] = useState(() => {
     const d = new Date();
     return { year: d.getFullYear(), month: d.getMonth() };
@@ -150,6 +165,67 @@ export default function CookTrackerScreen() {
     setViewMonth(prev => prev.month === 11 ? { year: prev.year + 1, month: 0 } : { ...prev, month: prev.month + 1 });
   };
 
+  const renderCalGrid = () => {
+    const calWeeks = buildCalWeeks(viewMonth.year, viewMonth.month);
+    return (
+      <View style={[styles.calCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={styles.sectionTitle}>Attendance</Text>
+        <View style={styles.calLegendRow}>
+          <View style={styles.legendItemCal}>
+            <View style={[styles.legendDotCal, { backgroundColor: '#10B981' }]} />
+            <Text style={[styles.legendTextCal, { color: colors.textMuted }]}>Present</Text>
+          </View>
+          <View style={styles.legendItemCal}>
+            <View style={[styles.legendDotCal, { backgroundColor: '#EF4444' }]} />
+            <Text style={[styles.legendTextCal, { color: colors.textMuted }]}>Absent</Text>
+          </View>
+          <View style={styles.legendItemCal}>
+            <View style={[styles.legendDotCal, { backgroundColor: '#F59E0B' }]} />
+            <Text style={[styles.legendTextCal, { color: colors.textMuted }]}>Half Day</Text>
+          </View>
+        </View>
+        <View style={styles.weekRow}>
+          {WEEKDAYS_CAL.map(w => (
+            <View key={w} style={styles.weekCell}>
+              <Text style={[styles.weekText, { color: w === 'Sun' ? '#EF4444' : colors.textMuted }]}>{w}</Text>
+            </View>
+          ))}
+        </View>
+        {calWeeks.map((week, wi) => (
+          <View key={wi} style={styles.calRow}>
+            {week.map((d, di) => {
+              if (d === null) {
+                return <View key={`empty-${wi}-${di}`} style={styles.calCellWrap} />;
+              }
+              const dateStr = `${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+              const record = data.attendance.find(a => a.date === dateStr);
+              const isToday = dateStr === today;
+              const isFuture = dateStr > today;
+              const statusCfg = record ? STATUS_CONFIG[record.status] : null;
+              return (
+                <TouchableOpacity
+                  key={dateStr}
+                  style={[
+                    styles.calCellWrap,
+                    statusCfg && { borderWidth: 1.5, borderColor: statusCfg.color, backgroundColor: statusCfg.color + '20', borderRadius: Radii.md },
+                    isFuture && { opacity: 0.35 },
+                  ]}
+                  onPress={() => !isFuture && toggleAttendance(dateStr)}
+                  onLongPress={() => !isFuture && record && clearDay(dateStr)}
+                  disabled={isFuture}
+                >
+                  <Text style={[styles.calDayNum, { color: colors.text, fontFamily: Fonts.bold }]}>{d}</Text>
+                  {statusCfg && <Text style={[styles.calDayLabel, { color: statusCfg.color }]}>{statusCfg.label}</Text>}
+                  {isToday && <View style={[styles.todayDotCal, { backgroundColor: ACCENT }]} />}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ))}
+      </View>
+    );
+  };
+
   return (
     <ScreenShell
       title={data.name}
@@ -216,7 +292,20 @@ export default function CookTrackerScreen() {
         )}
       </View>
 
-      {/* Calendar Grid */}
+      {/* View Toggle */}
+      <View style={[styles.viewToggle, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        {[
+          { k: 'list' as const, ic: 'list-outline', lb: 'List' },
+          { k: 'calendar' as const, ic: 'calendar-outline', lb: 'Calendar' },
+        ].map(v => (
+          <TouchableOpacity key={v.k} style={[styles.viewBtn, viewMode === v.k && { backgroundColor: ACCENT }]} onPress={() => setViewMode(v.k)}>
+            <Ionicons name={v.ic as any} size={15} color={viewMode === v.k ? '#fff' : colors.textMuted} />
+            <Text style={[styles.viewBtnText, { color: viewMode === v.k ? '#fff' : colors.textMuted }]}>{v.lb}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {viewMode === 'calendar' ? renderCalGrid() : (
       <View style={[styles.calCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={styles.sectionTitle}>Attendance</Text>
         <View style={styles.legend}>
@@ -275,6 +364,7 @@ export default function CookTrackerScreen() {
           );
         })}
       </View>
+      )}
 
       {/* Payment History */}
       {data.payments.length > 0 && (
@@ -472,4 +562,19 @@ const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
     modalBtns: { flexDirection: 'row', gap: Spacing.md },
     modalBtn: { flex: 1, paddingVertical: 12, borderRadius: Radii.md, alignItems: 'center' },
     modalBtnText: { fontSize: 15, fontFamily: Fonts.bold },
+    viewToggle: { flexDirection: 'row', borderRadius: Radii.lg, borderWidth: 1, padding: 3, gap: 3, marginBottom: Spacing.md },
+    viewBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8, borderRadius: Radii.md },
+    viewBtnText: { fontSize: 13, fontFamily: Fonts.semibold },
+    weekRow: { flexDirection: 'row', marginBottom: 4 },
+    weekCell: { flex: 1, alignItems: 'center', paddingVertical: 6 },
+    weekText: { fontSize: 11, fontFamily: Fonts.semibold },
+    calRow: { flexDirection: 'row' as const },
+    calCellWrap: { flex: 1, aspectRatio: 1, alignItems: 'center' as const, justifyContent: 'center' as const },
+    calDayNum: { fontSize: 14 },
+    calDayLabel: { fontSize: 9, fontFamily: Fonts.bold, marginTop: 1 },
+    todayDotCal: { width: 4, height: 4, borderRadius: 2, marginTop: 2 },
+    calLegendRow: { flexDirection: 'row', justifyContent: 'center', gap: Spacing.lg, marginBottom: Spacing.lg },
+    legendItemCal: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    legendDotCal: { width: 8, height: 8, borderRadius: 4 },
+    legendTextCal: { fontSize: 11, fontFamily: Fonts.medium },
   });

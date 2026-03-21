@@ -1,16 +1,15 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert,
-} from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
-const ACCENT = '#7C3AED';
+const ACCENT = '#0891B2';
 
-const WEEKDAYS_CAL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
 function buildCalWeeks(y: number, m: number): (number | null)[][] {
   const dow = new Date(y, m, 1).getDay();
   const dim = new Date(y, m + 1, 0).getDate();
@@ -23,13 +22,12 @@ function buildCalWeeks(y: number, m: number): (number | null)[][] {
   return weeks;
 }
 
-type AttendanceStatus = 'present' | 'absent' | 'half';
-type DayRecord = { date: string; status: AttendanceStatus };
+type DayRecord = { date: string; cans: number };
 type PaymentRecord = { id: string; date: string; amount: number; note: string };
-type MaidData = {
-  name: string;
-  monthlySalary: number;
-  attendance: DayRecord[];
+type WaterCanData = {
+  vendorName: string;
+  pricePerCan: number;
+  deliveries: DayRecord[];
   payments: PaymentRecord[];
 };
 
@@ -55,80 +53,85 @@ function getDayName(dateStr: string): string {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-const STATUS_CONFIG = {
-  present: { icon: 'checkmark-circle' as const, color: '#10B981', label: 'P' },
-  absent: { icon: 'close-circle' as const, color: '#EF4444', label: 'A' },
-  half: { icon: 'remove-circle' as const, color: '#F59E0B', label: 'H' },
-};
+const QUICK_CAN = [0, 1, 2, 3, 4, 5];
 
-export default function MaidTrackerScreen() {
+export default function WaterCanTrackerScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const [data, setData] = useState<MaidData>({
-    name: 'Maid',
-    monthlySalary: 0,
-    attendance: [],
+  const [data, setData] = useState<WaterCanData>({
+    vendorName: 'Water Vendor',
+    pricePerCan: 0,
+    deliveries: [],
     payments: [],
   });
   const [showSettings, setShowSettings] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
+  const [showEdit, setShowEdit] = useState<string | null>(null);
+  const [editCans, setEditCans] = useState('');
   const [nameInput, setNameInput] = useState('');
-  const [salaryInput, setSalaryInput] = useState('');
+  const [priceInput, setPriceInput] = useState('');
   const [payAmount, setPayAmount] = useState('');
   const [payNote, setPayNote] = useState('');
   const [payDate, setPayDate] = useState(todayISO());
-  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [viewMonth, setViewMonth] = useState(() => {
     const d = new Date();
     return { year: d.getFullYear(), month: d.getMonth() };
   });
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
 
   useEffect(() => {
-    loadJSON<MaidData>(KEYS.maidTracker, {
-      name: 'Maid',
-      monthlySalary: 0,
-      attendance: [],
+    loadJSON<WaterCanData>(KEYS.waterCanTracker, {
+      vendorName: 'Water Vendor',
+      pricePerCan: 0,
+      deliveries: [],
       payments: [],
     }).then(d => {
       setData(d);
-      setNameInput(d.name);
-      setSalaryInput(d.monthlySalary > 0 ? String(d.monthlySalary) : '');
+      setNameInput(d.vendorName);
+      setPriceInput(d.pricePerCan > 0 ? String(d.pricePerCan) : '');
     });
   }, []);
 
-  const persist = useCallback((d: MaidData) => {
+  const persist = useCallback((d: WaterCanData) => {
     setData(d);
-    saveJSON(KEYS.maidTracker, d);
+    saveJSON(KEYS.waterCanTracker, d);
   }, []);
 
-  const toggleAttendance = (dateStr: string) => {
-    const existing = data.attendance.find(a => a.date === dateStr);
-    let newStatus: AttendanceStatus;
-    if (!existing) newStatus = 'present';
-    else if (existing.status === 'present') newStatus = 'half';
-    else if (existing.status === 'half') newStatus = 'absent';
-    else newStatus = 'present';
-
-    const filtered = data.attendance.filter(a => a.date !== dateStr);
-    persist({ ...data, attendance: [...filtered, { date: dateStr, status: newStatus }] });
+  const setCansForDay = (dateStr: string, cans: number) => {
+    const existing = data.deliveries.find(a => a.date === dateStr);
+    if (existing) {
+      persist({ ...data, deliveries: data.deliveries.map(a => a.date === dateStr ? { ...a, cans } : a) });
+    } else {
+      persist({ ...data, deliveries: [...data.deliveries, { date: dateStr, cans }] });
+    }
   };
 
-  const clearDay = (dateStr: string) => {
-    persist({ ...data, attendance: data.attendance.filter(a => a.date !== dateStr) });
+  const openEditModal = (dateStr: string) => {
+    const existing = data.deliveries.find(a => a.date === dateStr);
+    setEditCans(existing ? String(existing.cans) : '0');
+    setShowEdit(dateStr);
+  };
+
+  const saveEdit = () => {
+    if (!showEdit) return;
+    setCansForDay(showEdit, parseInt(editCans) || 0);
+    setShowEdit(null);
   };
 
   const saveSettings = () => {
-    persist({ ...data, name: nameInput.trim() || 'Maid', monthlySalary: parseFloat(salaryInput) || 0 });
+    persist({ ...data, vendorName: nameInput.trim() || 'Water Vendor', pricePerCan: parseFloat(priceInput) || 0 });
     setShowSettings(false);
   };
 
   const addPayment = () => {
     const amt = parseFloat(payAmount);
     if (!amt || amt <= 0) return;
-    const updated = [{ id: uid(), date: payDate, amount: amt, note: payNote.trim() }, ...data.payments].sort((a, b) => b.date.localeCompare(a.date));
-    persist({ ...data, payments: updated });
-    setPayAmount(''); setPayNote(''); setShowPayment(false);
+    const payment: PaymentRecord = { id: uid(), date: payDate, amount: amt, note: payNote.trim() };
+    persist({ ...data, payments: [payment, ...data.payments].sort((a, b) => b.date.localeCompare(a.date)) });
+    setPayAmount('');
+    setPayNote('');
+    setShowPayment(false);
   };
 
   const deletePayment = (id: string) => {
@@ -140,96 +143,37 @@ export default function MaidTrackerScreen() {
 
   const monthDays = getMonthDays(viewMonth.year, viewMonth.month);
   const today = todayISO();
-
   const monthKey = `${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, '0')}`;
-  const monthAttendance = data.attendance.filter(a => a.date.startsWith(monthKey));
-  const presentDays = monthAttendance.filter(a => a.status === 'present').length;
-  const halfDays = monthAttendance.filter(a => a.status === 'half').length;
-  const absentDays = monthAttendance.filter(a => a.status === 'absent').length;
-  const effectiveDays = presentDays + halfDays * 0.5;
 
-  const totalDaysInMonth = monthDays.length;
-  const dailyRate = data.monthlySalary > 0 ? data.monthlySalary / totalDaysInMonth : 0;
-  const monthEarned = dailyRate * effectiveDays;
+  const monthDeliveries = data.deliveries.filter(a => a.date.startsWith(monthKey));
+  const totalCans = monthDeliveries.reduce((s, a) => s + a.cans, 0);
+  const totalCost = totalCans * data.pricePerCan;
+  const weeksInMonth = monthDays.length / 7;
+  const avgPerWeek = weeksInMonth > 0 ? totalCans / weeksInMonth : 0;
 
   const monthPayments = data.payments.filter(p => p.date.startsWith(monthKey));
   const totalPaid = monthPayments.reduce((s, p) => s + p.amount, 0);
-  const balance = monthEarned - totalPaid;
+  const balance = totalCost - totalPaid;
 
-  const prevMonth = () => setViewMonth(prev => prev.month === 0 ? { year: prev.year - 1, month: 11 } : { ...prev, month: prev.month - 1 });
-  const nextMonth = () => setViewMonth(prev => prev.month === 11 ? { year: prev.year + 1, month: 0 } : { ...prev, month: prev.month + 1 });
-
-  const renderCalGrid = () => {
-    const calWeeks = buildCalWeeks(viewMonth.year, viewMonth.month);
-    return (
-      <View style={[styles.calCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={styles.sectionTitle}>Attendance</Text>
-        <View style={styles.calLegendRow}>
-          <View style={styles.legendItemCal}>
-            <View style={[styles.legendDotCal, { backgroundColor: '#10B981' }]} />
-            <Text style={[styles.legendTextCal, { color: colors.textMuted }]}>Present</Text>
-          </View>
-          <View style={styles.legendItemCal}>
-            <View style={[styles.legendDotCal, { backgroundColor: '#EF4444' }]} />
-            <Text style={[styles.legendTextCal, { color: colors.textMuted }]}>Absent</Text>
-          </View>
-          <View style={styles.legendItemCal}>
-            <View style={[styles.legendDotCal, { backgroundColor: '#F59E0B' }]} />
-            <Text style={[styles.legendTextCal, { color: colors.textMuted }]}>Half Day</Text>
-          </View>
-        </View>
-        <View style={styles.weekRow}>
-          {WEEKDAYS_CAL.map(w => (
-            <View key={w} style={styles.weekCell}>
-              <Text style={[styles.weekText, { color: w === 'Sun' ? '#EF4444' : colors.textMuted }]}>{w}</Text>
-            </View>
-          ))}
-        </View>
-        {calWeeks.map((week, wi) => (
-          <View key={wi} style={styles.calRow}>
-            {week.map((d, di) => {
-              if (d === null) {
-                return <View key={`empty-${wi}-${di}`} style={styles.calCellWrap} />;
-              }
-              const dateStr = `${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-              const record = data.attendance.find(a => a.date === dateStr);
-              const isToday = dateStr === today;
-              const isFuture = dateStr > today;
-              const statusCfg = record ? STATUS_CONFIG[record.status] : null;
-              return (
-                <TouchableOpacity
-                  key={dateStr}
-                  style={[
-                    styles.calCellWrap,
-                    statusCfg && { borderWidth: 1.5, borderColor: statusCfg.color, backgroundColor: statusCfg.color + '20', borderRadius: Radii.md },
-                    isFuture && { opacity: 0.35 },
-                  ]}
-                  onPress={() => !isFuture && toggleAttendance(dateStr)}
-                  onLongPress={() => !isFuture && record && clearDay(dateStr)}
-                  disabled={isFuture}
-                >
-                  <Text style={[styles.calDayNum, { color: colors.text, fontFamily: Fonts.bold }]}>{d}</Text>
-                  {statusCfg && <Text style={[styles.calDayLabel, { color: statusCfg.color }]}>{statusCfg.label}</Text>}
-                  {isToday && <View style={[styles.todayDotCal, { backgroundColor: ACCENT }]} />}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        ))}
-      </View>
-    );
+  const prevMonth = () => {
+    setViewMonth(prev => prev.month === 0 ? { year: prev.year - 1, month: 11 } : { ...prev, month: prev.month - 1 });
   };
+  const nextMonth = () => {
+    setViewMonth(prev => prev.month === 11 ? { year: prev.year + 1, month: 0 } : { ...prev, month: prev.month + 1 });
+  };
+
+  const calWeeks = buildCalWeeks(viewMonth.year, viewMonth.month);
 
   return (
     <ScreenShell
-      title={data.name}
+      title={data.vendorName}
       accentColor={ACCENT}
       rightAction={
         <View style={{ flexDirection: 'row', gap: 12 }}>
           <TouchableOpacity onPress={() => { setPayAmount(''); setPayNote(''); setPayDate(todayISO()); setShowPayment(true); }}>
             <Ionicons name="cash-outline" size={24} color={ACCENT} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => { setNameInput(data.name); setSalaryInput(data.monthlySalary > 0 ? String(data.monthlySalary) : ''); setShowSettings(true); }}>
+          <TouchableOpacity onPress={() => { setNameInput(data.vendorName); setPriceInput(data.pricePerCan > 0 ? String(data.pricePerCan) : ''); setShowSettings(true); }}>
             <Ionicons name="settings-outline" size={24} color={ACCENT} />
           </TouchableOpacity>
         </View>
@@ -246,30 +190,26 @@ export default function MaidTrackerScreen() {
       <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.summaryGrid}>
           <View style={styles.summaryItem}>
-            <Text style={[styles.summaryVal, { color: '#10B981' }]}>{presentDays}</Text>
-            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Present</Text>
+            <Text style={[styles.summaryVal, { color: ACCENT }]}>{totalCans}</Text>
+            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Total Cans</Text>
           </View>
           <View style={styles.summaryItem}>
-            <Text style={[styles.summaryVal, { color: '#F59E0B' }]}>{halfDays}</Text>
-            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Half Day</Text>
+            <Text style={[styles.summaryVal, { color: '#10B981' }]}>{totalCost.toFixed(0)}</Text>
+            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Total Cost</Text>
           </View>
           <View style={styles.summaryItem}>
-            <Text style={[styles.summaryVal, { color: '#EF4444' }]}>{absentDays}</Text>
-            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Absent</Text>
-          </View>
-          <View style={styles.summaryItem}>
-            <Text style={[styles.summaryVal, { color: ACCENT }]}>{effectiveDays}</Text>
-            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Effective</Text>
+            <Text style={[styles.summaryVal, { color: '#3B82F6' }]}>{avgPerWeek.toFixed(1)}</Text>
+            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Avg/Week</Text>
           </View>
         </View>
 
-        {data.monthlySalary > 0 && (
+        {data.pricePerCan > 0 && (
           <>
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
             <View style={styles.financeRow}>
               <View style={styles.financeItem}>
-                <Text style={[styles.financeLabel, { color: colors.textMuted }]}>Earned</Text>
-                <Text style={[styles.financeVal, { color: '#10B981' }]}>{monthEarned.toFixed(0)}</Text>
+                <Text style={[styles.financeLabel, { color: colors.textMuted }]}>Cost</Text>
+                <Text style={[styles.financeVal, { color: '#10B981' }]}>{totalCost.toFixed(0)}</Text>
               </View>
               <View style={styles.financeItem}>
                 <Text style={[styles.financeLabel, { color: colors.textMuted }]}>Paid</Text>
@@ -299,55 +239,116 @@ export default function MaidTrackerScreen() {
         ))}
       </View>
 
-      {viewMode === 'calendar' ? renderCalGrid() : (
-      <View style={[styles.calCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={styles.sectionTitle}>Attendance</Text>
-        <View style={styles.legend}>
-          {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-            <View key={key} style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: cfg.color }]} />
-              <Text style={[styles.legendText, { color: colors.textMuted }]}>{key.charAt(0).toUpperCase() + key.slice(1)}</Text>
+      {/* Calendar Grid View */}
+      {viewMode === 'calendar' && (
+        <View style={[styles.calCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.calLegend}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: ACCENT }]} />
+              <Text style={[styles.legendText, { color: colors.textMuted }]}>Has Cans</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: colors.border }]} />
+              <Text style={[styles.legendText, { color: colors.textMuted }]}>None</Text>
+            </View>
+          </View>
+
+          <View style={styles.weekRow}>
+            {WEEKDAYS.map(w => (
+              <View key={w} style={styles.weekCell}>
+                <Text style={[styles.weekText, { color: w === 'Sun' ? '#EF4444' : colors.textMuted }]}>{w}</Text>
+              </View>
+            ))}
+          </View>
+
+          {calWeeks.map((week, wi) => (
+            <View key={wi} style={styles.calRow}>
+              {week.map((day, di) => {
+                if (day === null) return <View key={`empty-${wi}-${di}`} style={styles.calCell} />;
+                const dateStr = `${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const record = data.deliveries.find(a => a.date === dateStr);
+                const isToday = dateStr === today;
+                const isFuture = dateStr > today;
+                const cans = record?.cans ?? 0;
+
+                return (
+                  <TouchableOpacity
+                    key={dateStr}
+                    style={[
+                      styles.calCell,
+                      cans > 0 && { backgroundColor: ACCENT + '20', borderRadius: Radii.md },
+                      isToday && { borderWidth: 1.5, borderColor: ACCENT, borderRadius: Radii.md },
+                    ]}
+                    onPress={() => !isFuture && openEditModal(dateStr)}
+                    disabled={isFuture}
+                  >
+                    <Text style={[
+                      styles.calDayNum,
+                      { color: colors.text },
+                      isFuture && { opacity: 0.3 },
+                    ]}>{day}</Text>
+                    {cans > 0 && (
+                      <Text style={[styles.calDayLabel, { color: ACCENT }]}>{cans}</Text>
+                    )}
+                    {isToday && <View style={[styles.todayDot, { backgroundColor: ACCENT }]} />}
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           ))}
         </View>
+      )}
 
-        {monthDays.map(dateStr => {
-          const record = data.attendance.find(a => a.date === dateStr);
-          const isToday = dateStr === today;
-          const isFuture = dateStr > today;
-          const day = parseInt(dateStr.slice(8));
-          const dayName = getDayName(dateStr);
-          const isSunday = dayName === 'Sun';
+      {/* List View */}
+      {viewMode === 'list' && (
+        <View style={[styles.calCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={styles.sectionTitle}>Daily Log</Text>
 
-          return (
-            <TouchableOpacity
-              key={dateStr}
-              style={[styles.dayRow, { borderBottomColor: colors.border }, isToday && { backgroundColor: ACCENT + '10' }]}
-              onPress={() => !isFuture && toggleAttendance(dateStr)}
-              onLongPress={() => !isFuture && record && clearDay(dateStr)}
-              disabled={isFuture}
-            >
-              <View style={styles.dayLeft}>
-                <Text style={[styles.dayNum, { color: isSunday ? '#EF4444' : colors.text }, isFuture && { opacity: 0.4 }]}>{day}</Text>
-                <Text style={[styles.dayName, { color: isSunday ? '#EF4444' : colors.textMuted }, isFuture && { opacity: 0.4 }]}>{dayName}</Text>
-              </View>
-              {isToday && <View style={[styles.todayBadge, { backgroundColor: ACCENT }]}><Text style={styles.todayText}>Today</Text></View>}
-              <View style={styles.dayRight}>
-                {record ? (
-                  <View style={[styles.statusBadge, { backgroundColor: STATUS_CONFIG[record.status].color + '20' }]}>
-                    <Ionicons name={STATUS_CONFIG[record.status].icon} size={16} color={STATUS_CONFIG[record.status].color} />
-                    <Text style={[styles.statusText, { color: STATUS_CONFIG[record.status].color }]}>{STATUS_CONFIG[record.status].label}</Text>
-                  </View>
-                ) : isFuture ? (
-                  <Text style={[styles.unmarked, { color: colors.border }]}>—</Text>
-                ) : (
-                  <Text style={[styles.unmarked, { color: colors.textMuted }]}>Tap</Text>
-                )}
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+          {monthDays.map(dateStr => {
+            const record = data.deliveries.find(a => a.date === dateStr);
+            const isToday = dateStr === today;
+            const isFuture = dateStr > today;
+            const day = parseInt(dateStr.slice(8));
+            const dayName = getDayName(dateStr);
+            const isSunday = dayName === 'Sun';
+            const cans = record?.cans ?? 0;
+
+            return (
+              <TouchableOpacity
+                key={dateStr}
+                style={[
+                  styles.dayRow,
+                  { borderBottomColor: colors.border },
+                  isToday && { backgroundColor: ACCENT + '10' },
+                ]}
+                onPress={() => !isFuture && openEditModal(dateStr)}
+                disabled={isFuture}
+              >
+                <View style={styles.dayLeft}>
+                  <Text style={[styles.dayNum, { color: isSunday ? '#EF4444' : colors.text }, isFuture && { opacity: 0.4 }]}>{day}</Text>
+                  <Text style={[styles.dayName, { color: isSunday ? '#EF4444' : colors.textMuted }, isFuture && { opacity: 0.4 }]}>{dayName}</Text>
+                </View>
+                {isToday && <View style={[styles.todayBadge, { backgroundColor: ACCENT }]}><Text style={styles.todayTextBadge}>Today</Text></View>}
+                <View style={styles.dayRight}>
+                  {record ? (
+                    cans > 0 ? (
+                      <View style={[styles.statusBadge, { backgroundColor: ACCENT + '20' }]}>
+                        <Ionicons name="water" size={16} color={ACCENT} />
+                        <Text style={[styles.statusText, { color: ACCENT }]}>{cans} {cans === 1 ? 'can' : 'cans'}</Text>
+                      </View>
+                    ) : (
+                      <Text style={[styles.unmarked, { color: colors.textMuted }]}>0 cans</Text>
+                    )
+                  ) : isFuture ? (
+                    <Text style={[styles.unmarked, { color: colors.border }]}>—</Text>
+                  ) : (
+                    <Text style={[styles.unmarked, { color: colors.textMuted }]}>Tap</Text>
+                  )}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       )}
 
       {/* Payment History */}
@@ -369,20 +370,51 @@ export default function MaidTrackerScreen() {
         </View>
       )}
 
+      {/* Edit Cans Modal */}
+      <Modal visible={showEdit !== null} transparent animationType="fade" onRequestClose={() => setShowEdit(null)}>
+        <View style={styles.modalBg}>
+          <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>
+              Cans — {showEdit ? `${parseInt(showEdit.slice(8))} ${MONTHS[viewMonth.month]}` : ''}
+            </Text>
+            <TextInput
+              style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+              value={editCans} onChangeText={setEditCans} placeholder="Number of cans" placeholderTextColor={colors.textMuted}
+              keyboardType="numeric" autoFocus
+            />
+            <View style={styles.quickRow}>
+              {QUICK_CAN.map(q => (
+                <TouchableOpacity key={q} style={[styles.quickBtn, { backgroundColor: ACCENT + '15' }]} onPress={() => setEditCans(String(q))}>
+                  <Text style={[styles.quickText, { color: ACCENT }]}>{q}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.modalBtns}>
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: colors.surface }]} onPress={() => setShowEdit(null)}>
+                <Text style={[styles.modalBtnText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: ACCENT }]} onPress={saveEdit}>
+                <Text style={[styles.modalBtnText, { color: '#fff' }]}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Settings Modal */}
       <Modal visible={showSettings} transparent animationType="fade" onRequestClose={() => setShowSettings(false)}>
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Maid Settings</Text>
-            <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Name</Text>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Water Can Settings</Text>
+            <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Vendor Name</Text>
             <TextInput
               style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-              value={nameInput} onChangeText={setNameInput} placeholder="Maid name" placeholderTextColor={colors.textMuted} autoFocus
+              value={nameInput} onChangeText={setNameInput} placeholder="Vendor name" placeholderTextColor={colors.textMuted} autoFocus
             />
-            <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Monthly Salary</Text>
+            <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Price per Can</Text>
             <TextInput
               style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-              value={salaryInput} onChangeText={setSalaryInput} placeholder="e.g. 5000" placeholderTextColor={colors.textMuted} keyboardType="numeric"
+              value={priceInput} onChangeText={setPriceInput} placeholder="e.g. 30" placeholderTextColor={colors.textMuted} keyboardType="numeric"
             />
             <View style={styles.modalBtns}>
               <TouchableOpacity style={[styles.modalBtn, { backgroundColor: colors.surface }]} onPress={() => setShowSettings(false)}>
@@ -467,9 +499,9 @@ export default function MaidTrackerScreen() {
               style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
               value={payNote} onChangeText={setPayNote} placeholder="Note (optional)" placeholderTextColor={colors.textMuted}
             />
-            {data.monthlySalary > 0 && (
+            {data.pricePerCan > 0 && (
               <View style={styles.quickRow}>
-                {[data.monthlySalary, Math.round(data.monthlySalary / 2), 500, 1000].map(a => (
+                {[data.pricePerCan * 20, data.pricePerCan * 10, 500, 1000].map(a => (
                   <TouchableOpacity key={a} style={[styles.quickBtn, { backgroundColor: ACCENT + '15' }]} onPress={() => setPayAmount(String(a))}>
                     <Text style={[styles.quickText, { color: ACCENT }]}>{a}</Text>
                   </TouchableOpacity>
@@ -505,18 +537,30 @@ const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
     financeItem: { alignItems: 'center' },
     financeLabel: { fontSize: 10, fontFamily: Fonts.medium },
     financeVal: { fontSize: 16, fontFamily: Fonts.bold, marginTop: 2 },
+    viewToggle: { flexDirection: 'row', borderRadius: Radii.lg, borderWidth: 1, padding: 3, gap: 3, marginBottom: Spacing.md },
+    viewBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8, borderRadius: Radii.md },
+    viewBtnText: { fontSize: 13, fontFamily: Fonts.semibold },
     calCard: { borderRadius: Radii.xl, borderWidth: 1, padding: Spacing.md, marginBottom: Spacing.lg },
     sectionTitle: { fontSize: 11, fontFamily: Fonts.bold, color: c.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: Spacing.md, paddingHorizontal: Spacing.sm },
     legend: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.md, paddingHorizontal: Spacing.sm, flexWrap: 'wrap' },
     legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     legendDot: { width: 8, height: 8, borderRadius: 4 },
     legendText: { fontSize: 10, fontFamily: Fonts.medium },
+    weekRow: { flexDirection: 'row', marginBottom: 4 },
+    weekCell: { flex: 1, alignItems: 'center', paddingVertical: 6 },
+    weekText: { fontSize: 11, fontFamily: Fonts.semibold },
+    calRow: { flexDirection: 'row' },
+    calCell: { flex: 1, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
+    calDayNum: { fontSize: 14 },
+    calDayLabel: { fontSize: 9, fontFamily: Fonts.bold, marginTop: 1 },
+    todayDot: { width: 4, height: 4, borderRadius: 2, marginTop: 2 },
+    calLegend: { flexDirection: 'row', justifyContent: 'center', gap: Spacing.lg, marginBottom: Spacing.lg },
     dayRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: Spacing.sm, borderBottomWidth: 0.5 },
     dayLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, width: 60 },
     dayNum: { fontSize: 15, fontFamily: Fonts.bold, width: 24, textAlign: 'right' },
     dayName: { fontSize: 11, fontFamily: Fonts.medium },
     todayBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radii.pill, marginRight: 'auto', marginLeft: 8 },
-    todayText: { fontSize: 9, fontFamily: Fonts.bold, color: '#fff' },
+    todayTextBadge: { fontSize: 9, fontFamily: Fonts.bold, color: '#fff' },
     dayRight: { marginLeft: 'auto' },
     statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: Radii.pill },
     statusText: { fontSize: 12, fontFamily: Fonts.bold },
@@ -545,19 +589,4 @@ const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
     modalBtns: { flexDirection: 'row', gap: Spacing.md },
     modalBtn: { flex: 1, paddingVertical: 12, borderRadius: Radii.md, alignItems: 'center' },
     modalBtnText: { fontSize: 15, fontFamily: Fonts.bold },
-    viewToggle: { flexDirection: 'row', borderRadius: Radii.lg, borderWidth: 1, padding: 3, gap: 3, marginBottom: Spacing.md },
-    viewBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8, borderRadius: Radii.md },
-    viewBtnText: { fontSize: 13, fontFamily: Fonts.semibold },
-    weekRow: { flexDirection: 'row', marginBottom: 4 },
-    weekCell: { flex: 1, alignItems: 'center', paddingVertical: 6 },
-    weekText: { fontSize: 11, fontFamily: Fonts.semibold },
-    calRow: { flexDirection: 'row' },
-    calCellWrap: { flex: 1, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
-    calDayNum: { fontSize: 14 },
-    calDayLabel: { fontSize: 9, fontFamily: Fonts.bold, marginTop: 1 },
-    todayDotCal: { width: 4, height: 4, borderRadius: 2, marginTop: 2 },
-    calLegendRow: { flexDirection: 'row', justifyContent: 'center', gap: Spacing.lg, marginBottom: Spacing.lg },
-    legendItemCal: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    legendDotCal: { width: 8, height: 8, borderRadius: 4 },
-    legendTextCal: { fontSize: 11, fontFamily: Fonts.medium },
   });

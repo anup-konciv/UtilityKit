@@ -11,7 +11,7 @@
     "splash": {
       "image": "./assets/images/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0B1120"
+      "backgroundColor": "#D4960A"
     },
     "ios": {
       "supportsTablet": true,
@@ -20,7 +20,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
-        "backgroundColor": "#0B1120"
+        "backgroundColor": "#D4960A"
       },
       "package": "com.utilitykit.app"
     },
@@ -34,14 +34,22 @@
       [
         "expo-splash-screen",
         {
+          "image": "./assets/images/icon.png",
           "resizeMode": "contain",
-          "backgroundColor": "#0B1120"
+          "backgroundColor": "#D4960A"
         }
       ],
       "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "dc35a498-0048-4ebc-a040-bba7e4df2475"
+      }
+    },
+    "owner": "anup_mohan"
   }
 }

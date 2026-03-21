@@ -24,6 +24,7 @@ export const KEYS = {
   worldClocks: 'uk_world_clocks',
   flashcards: 'uk_flashcards',
   passwordHistory: 'uk_password_history',
+  savedPasswords: 'uk_saved_passwords',
   currencyFavorites: 'uk_currency_favorites',
   expenseCurrency: 'uk_expense_currency',
   hapticsEnabled: 'uk_haptics_enabled',
@@ -38,6 +39,12 @@ export const KEYS = {
   cookTracker: 'uk_cook_tracker',
   maidTracker: 'uk_maid_tracker',
   milkTracker: 'uk_milk_tracker',
+  maintenanceTracker: 'uk_maintenance_tracker',
+  waterCanTracker: 'uk_water_can_tracker',
+  flowerTracker: 'uk_flower_tracker',
+  driverTracker: 'uk_driver_tracker',
+  newspaperTracker: 'uk_newspaper_tracker',
+  officeBoyTracker: 'uk_office_boy_tracker',
 } as const;
 
 export async function loadJSON<T>(key: string, fallback: T): Promise<T> {
