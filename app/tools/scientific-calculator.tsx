@@ -1,124 +1,281 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  View,
+  ScrollView,
+  StyleSheet,
   Text,
   TouchableOpacity,
-  StyleSheet,
   Vibration,
-  ScrollView,
+  View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
+import { hexToRgb } from '@/lib/color-utils';
 
-// ─── Math helpers ────────────────────────────────────────────────────────────
+type AngleMode = 'deg' | 'rad';
+type ButtonRole = 'digit' | 'operator' | 'function' | 'special' | 'equals';
 
-function factorial(n: number): number {
-  n = Math.abs(Math.round(n));
-  if (n > 170) return Infinity;
-  let r = 1;
-  for (let i = 2; i <= n; i++) r *= i;
-  return r;
-}
+type ButtonDef = {
+  label: string;
+  altLabel?: string;
+  value: string;
+  altValue?: string;
+  role: ButtonRole;
+};
 
-function evaluate(expr: string, mode: 'deg' | 'rad'): string {
-  try {
-    const toRad = mode === 'deg' ? (v: number) => (v * Math.PI) / 180 : (v: number) => v;
-    const fromRad = mode === 'deg' ? (v: number) => (v * 180) / Math.PI : (v: number) => v;
-    const scope = {
-      sin: (v: number) => Math.sin(toRad(v)),
-      cos: (v: number) => Math.cos(toRad(v)),
-      tan: (v: number) => Math.tan(toRad(v)),
-      asin: (v: number) => fromRad(Math.asin(v)),
-      acos: (v: number) => fromRad(Math.acos(v)),
-      atan: (v: number) => fromRad(Math.atan(v)),
-      log: Math.log10,
-      ln: Math.log,
-      sqrt: Math.sqrt,
-      cbrt: Math.cbrt,
-      abs: Math.abs,
-      fact: factorial,
-      PI: Math.PI,
-      E: Math.E,
-      pow: Math.pow,
-      exp: Math.exp,
-      pow10: (v: number) => Math.pow(10, v),
-    };
-    const fn = new Function(
-      ...Object.keys(scope),
-      '"use strict"; return (' + expr + ')',
-    );
-    const result = fn(...Object.values(scope)) as number;
-    if (!isFinite(result)) return 'Error';
-    const val = parseFloat(result.toFixed(10));
-    return String(val);
-  } catch {
-    return 'Error';
-  }
-}
+type HistoryItem = {
+  expression: string;
+  displayExpression: string;
+  result: string;
+};
 
-// ─── Button types ────────────────────────────────────────────────────────────
+type EvaluationResult =
+  | { ok: true; text: string; numeric: number }
+  | { ok: false; text: 'Error' };
 
-type BtnType = 'num' | 'op' | 'fn' | 'fn2' | 'eq' | 'clr' | 'del' | 'mode';
-type BtnDef = { label: string; label2?: string; value: string; value2?: string; type: BtnType; span?: number };
+const ACCENT = '#2563EB';
+const ACCENT_DEEP = '#1D4ED8';
 
-// 5-column grid: scientific functions integrated with number pad
-const BUTTON_ROWS: BtnDef[][] = [
+const OPERATOR_TOKENS = ['**', '+', '-', '*', '/', '%'] as const;
+
+const DELETE_TOKENS = [
+  'pow10(',
+  'asin(',
+  'acos(',
+  'atan(',
+  'sqrt(',
+  'cbrt(',
+  'fact(',
+  'abs(',
+  'sin(',
+  'cos(',
+  'tan(',
+  'log(',
+  'ln(',
+  'exp(',
+  'Ans',
+  'PI',
+  '**3',
+  '**2',
+  '**',
+] as const;
+
+const BUTTON_ROWS: ButtonDef[][] = [
   [
-    { label: '2nd', value: '2ND', type: 'mode' },
-    { label: '(', value: '(', type: 'fn' },
-    { label: ')', value: ')', type: 'fn' },
-    { label: '%', value: '%', type: 'op' },
-    { label: 'AC', value: 'AC', type: 'clr' },
+    { label: 'Ans', value: 'Ans', role: 'special' },
+    { label: '(', value: '(', role: 'special' },
+    { label: ')', value: ')', role: 'special' },
+    { label: 'DEL', value: 'DEL', role: 'special' },
+    { label: 'AC', value: 'AC', role: 'special' },
   ],
   [
-    { label: 'sin', label2: 'sin⁻¹', value: 'sin(', value2: 'asin(', type: 'fn2' },
-    { label: 'cos', label2: 'cos⁻¹', value: 'cos(', value2: 'acos(', type: 'fn2' },
-    { label: 'tan', label2: 'tan⁻¹', value: 'tan(', value2: 'atan(', type: 'fn2' },
-    { label: '^', value: '**', type: 'op' },
-    { label: '⌫', value: 'DEL', type: 'del' },
+    { label: 'sin', altLabel: 'asin', value: 'sin(', altValue: 'asin(', role: 'function' },
+    { label: 'cos', altLabel: 'acos', value: 'cos(', altValue: 'acos(', role: 'function' },
+    { label: 'tan', altLabel: 'atan', value: 'tan(', altValue: 'atan(', role: 'function' },
+    { label: 'log', altLabel: '10^x', value: 'log(', altValue: 'pow10(', role: 'function' },
+    { label: 'ln', altLabel: 'e^x', value: 'ln(', altValue: 'exp(', role: 'function' },
   ],
   [
-    { label: 'ln', label2: 'eˣ', value: 'ln(', value2: 'exp(', type: 'fn2' },
-    { label: 'log', label2: '10ˣ', value: 'log(', value2: 'pow10(', type: 'fn2' },
-    { label: '√', label2: '³√', value: 'sqrt(', value2: 'cbrt(', type: 'fn2' },
-    { label: 'x²', label2: 'x³', value: '**2', value2: '**3', type: 'fn2' },
-    { label: '÷', value: '/', type: 'op' },
+    { label: 'sqrt', altLabel: 'cbrt', value: 'sqrt(', altValue: 'cbrt(', role: 'function' },
+    { label: 'x^2', altLabel: 'x^3', value: '**2', altValue: '**3', role: 'operator' },
+    { label: 'x^y', value: '**', role: 'operator' },
+    { label: 'n!', value: 'fact(', role: 'function' },
+    { label: 'pi', value: 'PI', role: 'function' },
   ],
   [
-    { label: 'π', value: 'PI', type: 'fn' },
-    { label: '7', value: '7', type: 'num' },
-    { label: '8', value: '8', type: 'num' },
-    { label: '9', value: '9', type: 'num' },
-    { label: '×', value: '*', type: 'op' },
+    { label: 'e', value: 'E', role: 'function' },
+    { label: '7', value: '7', role: 'digit' },
+    { label: '8', value: '8', role: 'digit' },
+    { label: '9', value: '9', role: 'digit' },
+    { label: '÷', value: '/', role: 'operator' },
   ],
   [
-    { label: 'e', value: 'E', type: 'fn' },
-    { label: '4', value: '4', type: 'num' },
-    { label: '5', value: '5', type: 'num' },
-    { label: '6', value: '6', type: 'num' },
-    { label: '−', value: '-', type: 'op' },
+    { label: 'abs', value: 'abs(', role: 'function' },
+    { label: '4', value: '4', role: 'digit' },
+    { label: '5', value: '5', role: 'digit' },
+    { label: '6', value: '6', role: 'digit' },
+    { label: '×', value: '*', role: 'operator' },
   ],
   [
-    { label: 'n!', value: 'fact(', type: 'fn' },
-    { label: '1', value: '1', type: 'num' },
-    { label: '2', value: '2', type: 'num' },
-    { label: '3', value: '3', type: 'num' },
-    { label: '+', value: '+', type: 'op' },
+    { label: '%', value: '%', role: 'operator' },
+    { label: '1', value: '1', role: 'digit' },
+    { label: '2', value: '2', role: 'digit' },
+    { label: '3', value: '3', role: 'digit' },
+    { label: '−', value: '-', role: 'operator' },
   ],
   [
-    { label: '|x|', value: 'abs(', type: 'fn' },
-    { label: '0', value: '0', type: 'num', span: 2 },
-    { label: '.', value: '.', type: 'num' },
-    { label: '=', value: '=', type: 'eq' },
+    { label: '+/-', value: 'NEGATE', role: 'special' },
+    { label: '0', value: '0', role: 'digit' },
+    { label: '.', value: '.', role: 'digit' },
+    { label: '+', value: '+', role: 'operator' },
+    { label: '=', value: '=', role: 'equals' },
   ],
 ];
 
-const ACCENT = '#6366F1';
+function rgba(hex: string, alpha: number) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+}
 
-// ─── Component ───────────────────────────────────────────────────────────────
+function factorial(value: number) {
+  if (!Number.isFinite(value) || value < 0 || Math.floor(value) !== value) {
+    return NaN;
+  }
+  if (value > 170) return Infinity;
+
+  let result = 1;
+  for (let index = 2; index <= value; index += 1) {
+    result *= index;
+  }
+  return result;
+}
+
+function formatNumericResult(value: number) {
+  if (!Number.isFinite(value) || Number.isNaN(value)) return 'Error';
+
+  const normalized = Object.is(value, -0) ? 0 : value;
+  const absolute = Math.abs(normalized);
+
+  if ((absolute >= 1e12 || (absolute > 0 && absolute < 1e-9)) && absolute !== 0) {
+    return normalized
+      .toExponential(8)
+      .replace(/\.?0+e/, 'e')
+      .replace('e+', 'e');
+  }
+
+  return String(Number.parseFloat(normalized.toFixed(10)));
+}
+
+function evaluateExpression(
+  expression: string,
+  mode: AngleMode,
+  answer: string,
+): EvaluationResult {
+  if (!expression.trim()) {
+    return { ok: false, text: 'Error' };
+  }
+
+  if (!/^[0-9+\-*/%.(),A-Za-z]*$/.test(expression)) {
+    return { ok: false, text: 'Error' };
+  }
+
+  const answerValue = Number.parseFloat(answer);
+  const toRad = mode === 'deg' ? (value: number) => (value * Math.PI) / 180 : (value: number) => value;
+  const fromRad = mode === 'deg' ? (value: number) => (value * 180) / Math.PI : (value: number) => value;
+
+  const scope = {
+    sin: (value: number) => Math.sin(toRad(value)),
+    cos: (value: number) => Math.cos(toRad(value)),
+    tan: (value: number) => Math.tan(toRad(value)),
+    asin: (value: number) => fromRad(Math.asin(value)),
+    acos: (value: number) => fromRad(Math.acos(value)),
+    atan: (value: number) => fromRad(Math.atan(value)),
+    log: Math.log10,
+    ln: Math.log,
+    sqrt: Math.sqrt,
+    cbrt: Math.cbrt,
+    abs: Math.abs,
+    fact: factorial,
+    pow10: (value: number) => 10 ** value,
+    exp: Math.exp,
+    PI: Math.PI,
+    E: Math.E,
+    Ans: Number.isFinite(answerValue) ? answerValue : 0,
+  };
+
+  try {
+    const evaluator = new Function(
+      ...Object.keys(scope),
+      `"use strict"; return (${expression});`,
+    );
+    const numeric = evaluator(...Object.values(scope)) as number;
+
+    if (typeof numeric !== 'number' || !Number.isFinite(numeric)) {
+      return { ok: false, text: 'Error' };
+    }
+
+    return { ok: true, text: formatNumericResult(numeric), numeric };
+  } catch {
+    return { ok: false, text: 'Error' };
+  }
+}
+
+function formatExpression(expression: string) {
+  return expression
+    .replace(/pow10\(/g, '10^(')
+    .replace(/asin\(/g, 'asin(')
+    .replace(/acos\(/g, 'acos(')
+    .replace(/atan\(/g, 'atan(')
+    .replace(/sqrt\(/g, 'sqrt(')
+    .replace(/cbrt\(/g, 'cbrt(')
+    .replace(/fact\(/g, 'fact(')
+    .replace(/abs\(/g, 'abs(')
+    .replace(/exp\(/g, 'e^(')
+    .replace(/PI/g, 'pi')
+    .replace(/\*\*3/g, '^3')
+    .replace(/\*\*2/g, '^2')
+    .replace(/\*\*/g, '^');
+}
+
+function tokenNeedsLeftOperand(token: string) {
+  return ['**', '**2', '**3', '+', '*', '/', '%', ')'].includes(token);
+}
+
+function tokenStartsANewFactor(token: string) {
+  return token.endsWith('(') || token === 'PI' || token === 'E' || token === 'Ans';
+}
+
+function trailingOperator(expression: string) {
+  return [...OPERATOR_TOKENS].find((token) => expression.endsWith(token)) ?? null;
+}
+
+function removeLastToken(expression: string) {
+  for (const token of DELETE_TOKENS) {
+    if (expression.endsWith(token)) {
+      return expression.slice(0, -token.length);
+    }
+  }
+  return expression.slice(0, -1);
+}
+
+function currentNumberHasDecimal(expression: string) {
+  let index = expression.length - 1;
+  let segment = '';
+
+  while (index >= 0) {
+    const char = expression[index];
+    if ((char >= '0' && char <= '9') || char === '.') {
+      segment = char + segment;
+      index -= 1;
+      continue;
+    }
+    break;
+  }
+
+  return segment.includes('.');
+}
+
+function shouldInsertImplicitMultiply(expression: string, token: string) {
+  if (!expression || !tokenStartsANewFactor(token)) return false;
+  if (expression.endsWith('PI') || expression.endsWith('Ans') || expression.endsWith('E')) {
+    return true;
+  }
+  const previous = expression.slice(-1);
+  return /[0-9.)]/.test(previous);
+}
+
+function replaceTrailingOperator(expression: string, token: string) {
+  const trailing = trailingOperator(expression);
+  if (!trailing) return expression + token;
+  return expression.slice(0, -trailing.length) + token;
+}
+
+function isValidAnswer(value: string) {
+  return value !== 'Error' && value.trim().length > 0;
+}
 
 export default function ScientificCalculatorScreen() {
   const { colors } = useAppTheme();
@@ -126,243 +283,490 @@ export default function ScientificCalculatorScreen() {
 
   const [expr, setExpr] = useState('');
   const [result, setResult] = useState('0');
-  const [mode, setMode] = useState<'deg' | 'rad'>('deg');
+  const [lastAnswer, setLastAnswer] = useState('0');
+  const [mode, setMode] = useState<AngleMode>('deg');
   const [is2nd, setIs2nd] = useState(false);
-  const [history, setHistory] = useState<string[]>([]);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [freshResult, setFreshResult] = useState(false);
 
-  const press = useCallback(
-    (val: string) => {
-      Vibration.vibrate(10);
-      if (val === '2ND') {
-        setIs2nd((p) => !p);
-        return;
-      }
-      if (val === 'AC') {
-        setExpr('');
-        setResult('0');
-        return;
-      }
-      if (val === 'DEL') {
-        setExpr((e) => e.slice(0, -1));
-        return;
-      }
-      if (val === '=') {
-        if (!expr) return;
-        const r = evaluate(expr, mode);
-        setResult(r);
-        if (r !== 'Error') {
-          setHistory((h) => [`${expr} = ${r}`, ...h].slice(0, 10));
-          setExpr(r);
-        }
-        return;
-      }
-      setExpr((e) => e + val);
-      setResult('');
-    },
-    [expr, mode],
-  );
+  const preview = useMemo(() => {
+    if (!expr) return null;
+    return evaluateExpression(expr, mode, lastAnswer);
+  }, [expr, lastAnswer, mode]);
 
-  const btnColor = (type: BtnType) => {
-    if (type === 'eq') return { bg: ACCENT, text: '#fff' };
-    if (type === 'clr') return { bg: colors.errorLight, text: colors.error };
-    if (type === 'del') return { bg: colors.warningLight, text: colors.warning };
-    if (type === 'op') return { bg: ACCENT + '20', text: ACCENT };
-    if (type === 'fn' || type === 'fn2') return { bg: colors.glass, text: colors.accent };
-    if (type === 'mode') return { bg: is2nd ? ACCENT : colors.glass, text: is2nd ? '#fff' : colors.textMuted };
-    return { bg: colors.surface, text: colors.text };
-  };
+  const displayValue =
+    expr && preview?.ok ? preview.text : result;
+  const displayLabel =
+    expr.length > 0 ? (preview?.ok ? 'Live Preview' : 'Last Result') : 'Result';
+  const displayExpression = formatExpression(expr);
+  const primaryDisplay = displayExpression || displayValue;
+
+  function commitExpression() {
+    if (!expr) return;
+
+    const evaluated = evaluateExpression(expr, mode, lastAnswer);
+    if (!evaluated.ok) {
+      setResult('Error');
+      setFreshResult(true);
+      return;
+    }
+
+    const formattedExpression = formatExpression(expr);
+    setResult(evaluated.text);
+    setLastAnswer(evaluated.text);
+    setExpr(evaluated.text);
+    setFreshResult(true);
+    setHistory((current) =>
+      [{ expression: expr, displayExpression: formattedExpression, result: evaluated.text }, ...current].slice(0, 8),
+    );
+    setIs2nd(false);
+  }
+
+  function press(token: string) {
+    Vibration.vibrate(10);
+
+    if (token === 'AC') {
+      setExpr('');
+      setResult('0');
+      setFreshResult(false);
+      setIs2nd(false);
+      return;
+    }
+
+    if (token === 'DEL') {
+      setExpr((current) => removeLastToken(current));
+      setFreshResult(false);
+      return;
+    }
+
+    if (token === '=') {
+      commitExpression();
+      return;
+    }
+
+    if (token === 'NEGATE') {
+      const base = expr && preview?.ok ? preview.text : lastAnswer;
+      const numeric = Number.parseFloat(base);
+      if (!Number.isFinite(numeric)) return;
+      const next = formatNumericResult(numeric * -1);
+      setExpr(next);
+      setResult(next);
+      setLastAnswer(next);
+      setFreshResult(true);
+      return;
+    }
+
+    let nextExpression = freshResult ? '' : expr;
+
+    if (freshResult) {
+      if (tokenNeedsLeftOperand(token) && isValidAnswer(lastAnswer)) {
+        nextExpression = lastAnswer;
+      }
+      if (token === '.') {
+        setExpr('0.');
+        setFreshResult(false);
+        setIs2nd(false);
+        return;
+      }
+    }
+
+    if (!nextExpression) {
+      if (token === '-') {
+        setExpr('-');
+        setFreshResult(false);
+        setIs2nd(false);
+        return;
+      }
+      if (token === '.') {
+        setExpr('0.');
+        setFreshResult(false);
+        setIs2nd(false);
+        return;
+      }
+      if (tokenNeedsLeftOperand(token)) {
+        return;
+      }
+    }
+
+    if (token === '.' && currentNumberHasDecimal(nextExpression)) {
+      return;
+    }
+
+    if (shouldInsertImplicitMultiply(nextExpression, token)) {
+      nextExpression += '*';
+    }
+
+    if (token === '.' && /[A-Za-z)]$/.test(nextExpression)) {
+      nextExpression += '*0';
+    }
+
+    if (OPERATOR_TOKENS.includes(token as (typeof OPERATOR_TOKENS)[number])) {
+      nextExpression = replaceTrailingOperator(nextExpression, token);
+    } else {
+      nextExpression += token;
+    }
+
+    setExpr(nextExpression);
+    setFreshResult(false);
+    if (is2nd) setIs2nd(false);
+  }
+
+  function restoreHistory(item: HistoryItem) {
+    setExpr(item.result);
+    setResult(item.result);
+    setLastAnswer(item.result);
+    setFreshResult(true);
+  }
+
+  function buttonTone(role: ButtonRole) {
+    if (role === 'equals') {
+      return { bg: ACCENT, text: '#FFFFFF', border: rgba(ACCENT, 0.3) };
+    }
+    if (role === 'operator') {
+      return { bg: rgba(ACCENT, 0.1), text: ACCENT, border: rgba(ACCENT, 0.18) };
+    }
+    if (role === 'special') {
+      return { bg: colors.surface, text: colors.textSub, border: colors.border };
+    }
+    return { bg: colors.card, text: colors.text, border: colors.border };
+  }
 
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top', 'bottom']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={22} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.title, { color: ACCENT }]}>Scientific Calc</Text>
-        {/* DEG/RAD toggle in header */}
-        <TouchableOpacity
-          style={[styles.modeToggle, { backgroundColor: colors.glass, borderColor: colors.border }]}
-          onPress={() => setMode((m) => (m === 'deg' ? 'rad' : 'deg'))}
+    <ScreenShell title="Scientific Calc" accentColor={ACCENT} scrollable={false}>
+      <View style={styles.layout}>
+        <LinearGradient
+          colors={['#0F172A', '#1D4ED8', '#38BDF8']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.displayCard}
         >
-          <Text style={[styles.modeToggleText, { color: ACCENT }]}>{mode.toUpperCase()}</Text>
-        </TouchableOpacity>
-      </View>
+          <View style={styles.topRow}>
+            <TouchableOpacity
+              onPress={() => setIs2nd((current) => !current)}
+              style={[styles.inlineChip, is2nd ? styles.inlineChipActive : null]}
+            >
+              <Text style={[styles.inlineChipText, is2nd ? styles.inlineChipTextActive : null]}>
+                2nd
+              </Text>
+            </TouchableOpacity>
 
-      {/* Display */}
-      <View style={[styles.display, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        {/* History preview */}
-        {history.length > 0 && (
-          <Text style={[styles.historyText, { color: colors.textMuted }]} numberOfLines={1}>
-            {history[0]}
-          </Text>
-        )}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.exprScroll}>
-          <Text style={[styles.exprText, { color: colors.textMuted }]}>{expr || ' '}</Text>
-        </ScrollView>
-        <Text
-          style={[styles.resultText, { color: result === 'Error' ? colors.error : ACCENT }]}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-        >
-          {result || '0'}
-        </Text>
-      </View>
-
-      {/* Button Grid — 5 columns */}
-      <View style={styles.grid}>
-        {BUTTON_ROWS.map((row, ri) => (
-          <View key={ri} style={styles.row}>
-            {row.map((btn) => {
-              const vc = btnColor(btn.type);
-              const label = is2nd && btn.label2 ? btn.label2 : btn.label;
-              const value = is2nd && btn.value2 ? btn.value2 : btn.value;
-              return (
-                <TouchableOpacity
-                  key={btn.label}
-                  style={[
-                    styles.btn,
-                    { backgroundColor: vc.bg, flex: btn.span || 1 },
-                    btn.type === 'eq' && styles.btnEq,
-                  ]}
-                  onPress={() => press(value)}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      btn.type === 'num' || btn.type === 'eq' ? styles.btnLabelLg : styles.btnLabelSm,
-                      { color: vc.text },
-                    ]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
+            <View style={styles.modePill}>
+              {(['deg', 'rad'] as AngleMode[]).map((value) => {
+                const active = mode === value;
+                return (
+                  <TouchableOpacity
+                    key={value}
+                    onPress={() => setMode(value)}
+                    style={[styles.modeTab, active ? styles.modeTabActive : null]}
                   >
-                    {label}
-                  </Text>
-                  {btn.label2 && !is2nd && (
-                    <Text style={[styles.btn2ndHint, { color: ACCENT + '60' }]}>{btn.label2}</Text>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
+                    <Text style={[styles.modeTabText, active ? styles.modeTabTextActive : null]}>
+                      {value.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <TouchableOpacity
+              onPress={() => setHistory([])}
+              style={[styles.inlineChip, history.length === 0 ? styles.inlineChipDisabled : null]}
+              disabled={history.length === 0}
+            >
+              <Text
+                style={[
+                  styles.inlineChipText,
+                  history.length === 0 ? styles.inlineChipTextDim : null,
+                ]}
+              >
+                Clear
+              </Text>
+            </TouchableOpacity>
           </View>
-        ))}
+
+          <Text style={styles.statusText}>
+            {displayExpression ? 'Expression' : displayLabel}
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.expressionWrap}>
+            <Text style={styles.resultText} numberOfLines={1} adjustsFontSizeToFit>
+              {primaryDisplay || 'Build an expression with the keypad'}
+            </Text>
+          </ScrollView>
+          <Text style={styles.previewText} numberOfLines={1} adjustsFontSizeToFit>
+            {displayExpression ? `${displayLabel}: ${displayValue}` : 'Ready'}
+          </Text>
+
+          <View style={styles.helperRow}>
+            <View style={styles.helperPill}>
+              <Ionicons name="flash-outline" size={14} color="#DBEAFE" />
+              <Text style={styles.helperPillText}>
+                {preview?.ok ? 'Preview updates live' : 'Use = to confirm a result'}
+              </Text>
+            </View>
+            <View style={styles.helperPill}>
+              <Ionicons name="time-outline" size={14} color="#DBEAFE" />
+              <Text style={styles.helperPillText}>{history.length} saved</Text>
+            </View>
+          </View>
+
+          {history.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.historyRow}
+            >
+              {history.map((item, index) => (
+                <TouchableOpacity
+                  key={`${item.expression}-${index}`}
+                  onPress={() => restoreHistory(item)}
+                  style={styles.historyChip}
+                >
+                  <Text style={styles.historyChipExpr} numberOfLines={1}>
+                    {item.displayExpression}
+                  </Text>
+                  <Text style={styles.historyChipValue}>{item.result}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          ) : (
+            <Text style={styles.emptyHistoryText}>
+              Try `sin(45)` in DEG mode, `log(100)`, or `pi*2`.
+            </Text>
+          )}
+        </LinearGradient>
+
+        <View style={styles.grid}>
+          {BUTTON_ROWS.map((row, rowIndex) => (
+            <View key={rowIndex} style={styles.row}>
+              {row.map((button) => {
+                const tone = buttonTone(button.role);
+                const label = is2nd && button.altLabel ? button.altLabel : button.label;
+                const value = is2nd && button.altValue ? button.altValue : button.value;
+                return (
+                  <TouchableOpacity
+                    key={`${button.label}-${button.value}`}
+                    onPress={() => press(value)}
+                    activeOpacity={0.8}
+                    style={[
+                      styles.button,
+                      {
+                        backgroundColor: tone.bg,
+                        borderColor: tone.border,
+                      },
+                      button.role === 'equals' ? styles.equalsButton : null,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        button.role === 'digit' ||
+                        button.role === 'equals' ||
+                        (button.role === 'operator' && label.length === 1)
+                          ? styles.buttonLabelLarge
+                          : styles.buttonLabelSmall,
+                        { color: tone.text },
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                    {button.altLabel && !is2nd ? (
+                      <Text style={styles.altHint}>{button.altLabel}</Text>
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ))}
+        </View>
       </View>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
-
-const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
+const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
   StyleSheet.create({
-    root: { flex: 1 },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: Spacing.md,
-      paddingVertical: Spacing.sm,
-      backgroundColor: c.surface,
-      borderBottomWidth: 1,
-      borderBottomColor: c.border,
+    layout: {
+      flex: 1,
+      gap: Spacing.md,
+    },
+    displayCard: {
+      borderRadius: Radii.xl,
+      padding: Spacing.lg,
       gap: Spacing.sm,
     },
-    backBtn: {
-      width: 36,
-      height: 36,
-      borderRadius: Radii.md,
+    topRow: {
+      flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: c.bg,
-      borderWidth: 1,
-      borderColor: c.border,
+      justifyContent: 'space-between',
+      gap: Spacing.sm,
     },
-    title: {
-      flex: 1,
-      textAlign: 'center',
-      fontSize: 17,
-      fontFamily: Fonts.bold,
-    },
-    modeToggle: {
+    inlineChip: {
+      minWidth: 56,
       paddingHorizontal: 12,
-      paddingVertical: 6,
+      paddingVertical: 8,
       borderRadius: Radii.pill,
       borderWidth: 1,
-    },
-    modeToggleText: {
-      fontSize: 12,
-      fontFamily: Fonts.bold,
-      letterSpacing: 1,
-    },
-
-    // Display
-    display: {
-      marginHorizontal: Spacing.md,
-      marginTop: Spacing.sm,
-      marginBottom: Spacing.sm,
-      padding: Spacing.md,
-      paddingBottom: Spacing.lg,
-      borderRadius: Radii.xl,
-      borderWidth: 1,
-      minHeight: 100,
-      justifyContent: 'flex-end',
-    },
-    historyText: {
-      fontSize: 11,
-      fontFamily: Fonts.regular,
-      textAlign: 'right',
-      marginBottom: 2,
-      opacity: 0.6,
-    },
-    exprScroll: {
-      maxHeight: 24,
-      marginBottom: 4,
-    },
-    exprText: {
-      fontSize: 15,
-      fontFamily: Fonts.regular,
-      textAlign: 'right',
-    },
-    resultText: {
-      fontSize: 36,
-      fontFamily: Fonts.bold,
-      textAlign: 'right',
-      letterSpacing: -1,
-    },
-
-    // Grid
-    grid: {
-      flex: 1,
-      paddingHorizontal: Spacing.xs,
-      paddingBottom: Spacing.xs,
-      gap: 6,
-    },
-    row: {
-      flexDirection: 'row',
-      flex: 1,
-      gap: 6,
-    },
-    btn: {
-      borderRadius: Radii.md,
+      borderColor: 'rgba(255,255,255,0.18)',
+      backgroundColor: 'rgba(255,255,255,0.12)',
       alignItems: 'center',
       justifyContent: 'center',
-      paddingVertical: 2,
-      paddingHorizontal: 2,
+    },
+    inlineChipActive: {
+      backgroundColor: '#FFFFFF',
+      borderColor: '#FFFFFF',
+    },
+    inlineChipDisabled: {
+      opacity: 0.55,
+    },
+    inlineChipText: {
+      fontSize: 12,
+      fontFamily: Fonts.semibold,
+      color: '#E0F2FE',
+    },
+    inlineChipTextActive: {
+      color: ACCENT_DEEP,
+    },
+    inlineChipTextDim: {
+      color: '#BFDBFE',
+    },
+    modePill: {
+      flexDirection: 'row',
+      borderRadius: Radii.pill,
+      padding: 3,
+      backgroundColor: 'rgba(255,255,255,0.14)',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.18)',
+    },
+    modeTab: {
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      borderRadius: Radii.pill,
+    },
+    modeTabActive: {
+      backgroundColor: '#FFFFFF',
+    },
+    modeTabText: {
+      fontSize: 12,
+      fontFamily: Fonts.semibold,
+      color: '#DBEAFE',
+    },
+    modeTabTextActive: {
+      color: ACCENT_DEEP,
+    },
+    statusText: {
+      fontSize: 11,
+      fontFamily: Fonts.semibold,
+      color: '#BFDBFE',
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+    },
+    expressionWrap: {
+      maxHeight: 52,
+    },
+    expressionText: {
+      fontSize: 15,
+      lineHeight: 22,
+      fontFamily: Fonts.regular,
+      color: '#DBEAFE',
+    },
+    resultText: {
+      fontSize: 40,
+      lineHeight: 46,
+      fontFamily: Fonts.bold,
+      color: '#FFFFFF',
+      letterSpacing: -1,
+    },
+    previewText: {
+      fontSize: 13,
+      lineHeight: 18,
+      fontFamily: Fonts.medium,
+      color: '#DBEAFE',
+    },
+    helperRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: Spacing.sm,
+    },
+    helperPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: Spacing.sm,
+      paddingVertical: 7,
+      borderRadius: Radii.pill,
+      backgroundColor: 'rgba(255,255,255,0.12)',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.16)',
+    },
+    helperPillText: {
+      fontSize: 11,
+      fontFamily: Fonts.medium,
+      color: '#DBEAFE',
+    },
+    historyRow: {
+      gap: Spacing.sm,
+      paddingTop: 2,
+    },
+    historyChip: {
+      width: 132,
+      borderRadius: Radii.lg,
+      padding: Spacing.sm,
+      backgroundColor: 'rgba(255,255,255,0.12)',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.16)',
+      gap: 4,
+    },
+    historyChipExpr: {
+      fontSize: 11,
+      fontFamily: Fonts.regular,
+      color: '#BFDBFE',
+    },
+    historyChipValue: {
+      fontSize: 16,
+      fontFamily: Fonts.bold,
+      color: '#FFFFFF',
+    },
+    emptyHistoryText: {
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: Fonts.regular,
+      color: '#BFDBFE',
+    },
+    grid: {
+      flex: 1,
+      gap: Spacing.sm,
+    },
+    row: {
+      flex: 1,
+      flexDirection: 'row',
+      gap: Spacing.sm,
+    },
+    button: {
+      flex: 1,
+      borderRadius: Radii.lg,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 4,
+      paddingVertical: 8,
       position: 'relative',
     },
-    btnEq: {},
-    btnLabelLg: {
-      fontSize: 20,
-      fontFamily: Fonts.medium,
+    equalsButton: {
+      backgroundColor: ACCENT,
+      borderColor: rgba(ACCENT, 0.28),
     },
-    btnLabelSm: {
+    buttonLabelLarge: {
+      fontSize: 22,
+      fontFamily: Fonts.bold,
+    },
+    buttonLabelSmall: {
       fontSize: 13,
       fontFamily: Fonts.semibold,
     },
-    btn2ndHint: {
+    altHint: {
       position: 'absolute',
-      bottom: 2,
-      right: 4,
-      fontSize: 8,
+      right: 6,
+      bottom: 4,
+      fontSize: 9,
       fontFamily: Fonts.regular,
+      color: colors.textMuted,
     },
   });

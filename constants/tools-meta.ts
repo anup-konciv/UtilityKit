@@ -21,10 +21,10 @@ export const TOOLS: ToolMeta[] = [
   {
     id: 'sci-calc',
     label: 'Scientific Calc',
-    description: 'Trig, log, powers & more',
+    description: 'Trig, powers, logs & live preview',
     icon: 'flask-outline',
     route: '/tools/scientific-calculator',
-    accent: '#6366F1',
+    accent: '#2563EB',
     badge: 'Math',
   },
   {
@@ -66,10 +66,10 @@ export const TOOLS: ToolMeta[] = [
   {
     id: 'todo',
     label: 'Todo Manager',
-    description: 'Tasks with priorities',
+    description: 'Colorful planner with priorities',
     icon: 'checkbox-outline',
     route: '/tools/todo-manager',
-    accent: '#8B5CF6',
+    accent: '#F97360',
     badge: 'Tasks',
   },
   {
@@ -102,7 +102,7 @@ export const TOOLS: ToolMeta[] = [
   {
     id: 'age-calc',
     label: 'Age Calculator',
-    description: 'Exact age & birthday',
+    description: 'Exact age, totals & next birthday',
     icon: 'calendar-outline',
     route: '/tools/age-calculator',
     accent: '#84CC16',
@@ -147,7 +147,7 @@ export const TOOLS: ToolMeta[] = [
   {
     id: 'birthday',
     label: 'Birthday Tracker',
-    description: 'Never miss a birthday',
+    description: 'Upcoming birthdays, notes & age previews',
     icon: 'gift-outline',
     route: '/tools/birthday-tracker',
     accent: '#F43F5E',
