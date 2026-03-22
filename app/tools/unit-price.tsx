@@ -1,27 +1,61 @@
-import { useState, useMemo, useCallback } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
+import { pickSeededValue, withAlpha } from '@/lib/color-utils';
 
 const ACCENT = '#9333EA';
 
 type Product = { id: string; name: string; price: string; quantity: string; unit: string };
+type ProductAnalysis = {
+  id: string;
+  name: string;
+  price: number;
+  qty: number;
+  unit: string;
+  baseUnit: string;
+  unitPrice: number;
+};
 
-const UNITS = ['g', 'kg', 'oz', 'lb', 'ml', 'L', 'fl oz', 'pcs'];
+const UNITS = ['g', 'kg', 'oz', 'lb', 'ml', 'L', 'fl oz', 'pcs'] as const;
+const PRODUCT_COLORS = [
+  { primary: '#F97316', soft: '#FFF7ED' },
+  { primary: '#0EA5E9', soft: '#EFF6FF' },
+  { primary: '#10B981', soft: '#ECFDF5' },
+  { primary: '#EC4899', soft: '#FDF2F8' },
+  { primary: '#F59E0B', soft: '#FFFBEB' },
+];
 
-function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function uid() {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
 
-function toBaseUnit(qty: number, unit: string): { value: number; base: string } {
+function toBaseUnit(quantity: number, unit: string) {
   switch (unit) {
-    case 'kg': return { value: qty * 1000, base: 'g' };
-    case 'lb': return { value: qty * 453.592, base: 'g' };
-    case 'oz': return { value: qty * 28.3495, base: 'g' };
-    case 'L': return { value: qty * 1000, base: 'ml' };
-    case 'fl oz': return { value: qty * 29.5735, base: 'ml' };
-    default: return { value: qty, base: unit };
+    case 'kg':
+      return { value: quantity * 1000, base: 'g' };
+    case 'lb':
+      return { value: quantity * 453.592, base: 'g' };
+    case 'oz':
+      return { value: quantity * 28.3495, base: 'g' };
+    case 'L':
+      return { value: quantity * 1000, base: 'ml' };
+    case 'fl oz':
+      return { value: quantity * 29.5735, base: 'ml' };
+    default:
+      return { value: quantity, base: unit };
   }
+}
+
+function formatUnitPrice(item: ProductAnalysis) {
+  if (item.unitPrice < 0.01) {
+    return `${(item.unitPrice * 1000).toFixed(2)} / 1000 ${item.baseUnit}`;
+  }
+
+  return `${item.unitPrice.toFixed(4)} / ${item.baseUnit}`;
 }
 
 export default function UnitPriceScreen() {
@@ -29,116 +63,148 @@ export default function UnitPriceScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const [products, setProducts] = useState<Product[]>([
-    { id: uid(), name: 'Product A', price: '', quantity: '', unit: 'g' },
-    { id: uid(), name: 'Product B', price: '', quantity: '', unit: 'g' },
+    { id: uid(), name: 'Everyday Pack', price: '79', quantity: '500', unit: 'g' },
+    { id: uid(), name: 'Family Pack', price: '139', quantity: '1000', unit: 'g' },
   ]);
 
   const updateProduct = useCallback((id: string, field: keyof Product, value: string) => {
-    setProducts(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
+    setProducts((current) => current.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
   }, []);
 
-  const addProduct = () => {
-    setProducts(prev => [...prev, { id: uid(), name: `Product ${String.fromCharCode(65 + prev.length)}`, price: '', quantity: '', unit: 'g' }]);
-  };
+  const addProduct = useCallback(() => {
+    setProducts((current) => [
+      ...current,
+      {
+        id: uid(),
+        name: `Option ${String.fromCharCode(65 + current.length)}`,
+        price: '',
+        quantity: '',
+        unit: 'g',
+      },
+    ]);
+  }, []);
 
-  const removeProduct = (id: string) => {
-    if (products.length <= 2) return;
-    setProducts(prev => prev.filter(p => p.id !== id));
-  };
+  const removeProduct = useCallback((id: string) => {
+    setProducts((current) => (current.length > 2 ? current.filter((item) => item.id !== id) : current));
+  }, []);
 
   const analysis = useMemo(() => {
-    const items = products.map(p => {
-      const price = parseFloat(p.price);
-      const qty = parseFloat(p.quantity);
-      if (!price || !qty || price <= 0 || qty <= 0) return null;
-      const base = toBaseUnit(qty, p.unit);
-      const unitPrice = price / base.value;
-      return { id: p.id, name: p.name, price, qty, unit: p.unit, unitPrice, baseUnit: base.base, baseQty: base.value };
-    }).filter(Boolean) as { id: string; name: string; price: number; qty: number; unit: string; unitPrice: number; baseUnit: string; baseQty: number }[];
+    const items = products
+      .map((product) => {
+        const price = Number.parseFloat(product.price);
+        const quantity = Number.parseFloat(product.quantity);
 
-    if (items.length < 2) return null;
+        if (!price || !quantity || price <= 0 || quantity <= 0) return null;
 
-    // Only compare items with same base unit
-    const groups = new Map<string, typeof items>();
-    for (const item of items) {
-      const list = groups.get(item.baseUnit) || [];
-      list.push(item);
-      groups.set(item.baseUnit, list);
-    }
+        const base = toBaseUnit(quantity, product.unit);
 
-    let bestId: string | null = null;
-    let bestPrice = Infinity;
-    for (const [, group] of groups) {
-      if (group.length < 2) continue;
-      for (const item of group) {
-        if (item.unitPrice < bestPrice) {
-          bestPrice = item.unitPrice;
-          bestId = item.id;
-        }
+        return {
+          id: product.id,
+          name: product.name.trim() || 'Untitled product',
+          price,
+          qty: quantity,
+          unit: product.unit,
+          baseUnit: base.base,
+          unitPrice: price / base.value,
+        } satisfies ProductAnalysis;
+      })
+      .filter(Boolean) as ProductAnalysis[];
+
+    const groups = new Map<string, ProductAnalysis[]>();
+
+    items.forEach((item) => {
+      const existing = groups.get(item.baseUnit) ?? [];
+      groups.set(item.baseUnit, [...existing, item]);
+    });
+
+    const bestIds = new Set<string>();
+    const summaryRows: { baseUnit: string; items: ProductAnalysis[] }[] = [];
+
+    groups.forEach((group, baseUnit) => {
+      const sorted = [...group].sort((left, right) => left.unitPrice - right.unitPrice);
+      if (sorted.length > 1) {
+        bestIds.add(sorted[0].id);
       }
-    }
+      summaryRows.push({ baseUnit, items: sorted });
+    });
 
-    return { items, bestId };
+    summaryRows.sort((left, right) => left.baseUnit.localeCompare(right.baseUnit));
+
+    return { items, bestIds, summaryRows, hasComparableGroup: summaryRows.some((group) => group.items.length > 1) };
   }, [products]);
 
   return (
     <ScreenShell title="Price Compare" accentColor={ACCENT}>
-      <Text style={[styles.hint, { color: colors.textMuted }]}>
-        Compare products by their unit price to find the best deal.
-      </Text>
+      <LinearGradient
+        colors={['#581C87', '#9333EA', '#DDD6FE']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.heroCard}
+      >
+        <Text style={styles.heroEyebrow}>Smart Shopping</Text>
+        <Text style={styles.heroTitle}>
+          {analysis.hasComparableGroup ? `${analysis.bestIds.size} best deal${analysis.bestIds.size === 1 ? '' : 's'} found` : 'Compare like-for-like products'}
+        </Text>
+        <Text style={styles.heroCopy}>
+          Match products by their true unit price so you can see which pack actually gives the better value.
+        </Text>
+      </LinearGradient>
 
-      {products.map((product, idx) => {
-        const item = analysis?.items.find(i => i.id === product.id);
-        const isBest = analysis?.bestId === product.id;
+      {products.map((product) => {
+        const palette = pickSeededValue(PRODUCT_COLORS, product.id);
+        const item = analysis.items.find((entry) => entry.id === product.id);
+        const isBest = analysis.bestIds.has(product.id);
 
         return (
           <View
             key={product.id}
             style={[
-              styles.card,
-              { backgroundColor: colors.card, borderColor: isBest ? ACCENT : colors.border },
-              isBest && { borderWidth: 2 },
+              styles.productCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: isBest ? withAlpha(palette.primary, '44') : colors.border,
+              },
             ]}
           >
-            {isBest && (
-              <View style={[styles.bestBadge, { backgroundColor: ACCENT }]}>
-                <Ionicons name="trophy" size={12} color="#fff" />
-                <Text style={styles.bestBadgeText}>Best Deal</Text>
+            <View style={styles.productTopRow}>
+              <View style={[styles.productAccent, { backgroundColor: palette.primary }]} />
+              <View style={styles.productHeaderText}>
+                <TextInput
+                  style={[styles.nameInput, { color: colors.text }]}
+                  value={product.name}
+                  onChangeText={(value) => updateProduct(product.id, 'name', value)}
+                  placeholder="Product name"
+                  placeholderTextColor={colors.textMuted}
+                />
+                <Text style={[styles.productTag, { color: palette.primary }]}>
+                  {isBest ? 'Best in group' : 'Compare option'}
+                </Text>
               </View>
-            )}
+              {products.length > 2 ? (
+                <TouchableOpacity onPress={() => removeProduct(product.id)} style={styles.removeButton}>
+                  <Ionicons name="close-circle" size={20} color={colors.textMuted} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
 
-            {products.length > 2 && (
-              <TouchableOpacity style={styles.removeBtn} onPress={() => removeProduct(product.id)}>
-                <Ionicons name="close-circle" size={20} color={colors.textMuted} />
-              </TouchableOpacity>
-            )}
-
-            <TextInput
-              style={[styles.nameInput, { color: colors.text }]}
-              value={product.name}
-              onChangeText={v => updateProduct(product.id, 'name', v)}
-              placeholder="Product name"
-              placeholderTextColor={colors.textMuted}
-            />
-
-            <View style={styles.fieldRow}>
-              <View style={{ flex: 1 }}>
+            <View style={styles.fieldGrid}>
+              <View style={styles.field}>
                 <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Price</Text>
                 <TextInput
                   style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                   value={product.price}
-                  onChangeText={v => updateProduct(product.id, 'price', v)}
+                  onChangeText={(value) => updateProduct(product.id, 'price', value)}
                   placeholder="0.00"
                   placeholderTextColor={colors.textMuted}
                   keyboardType="numeric"
                 />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={styles.field}>
                 <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Quantity</Text>
                 <TextInput
                   style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                   value={product.quantity}
-                  onChangeText={v => updateProduct(product.id, 'quantity', v)}
+                  onChangeText={(value) => updateProduct(product.id, 'quantity', value)}
                   placeholder="0"
                   placeholderTextColor={colors.textMuted}
                   keyboardType="numeric"
@@ -147,82 +213,256 @@ export default function UnitPriceScreen() {
             </View>
 
             <View style={styles.unitRow}>
-              {UNITS.map(u => (
-                <TouchableOpacity
-                  key={u}
-                  style={[styles.unitBtn, product.unit === u && { backgroundColor: ACCENT, borderColor: ACCENT }]}
-                  onPress={() => updateProduct(product.id, 'unit', u)}
-                >
-                  <Text style={[styles.unitBtnText, { color: product.unit === u ? '#fff' : colors.textMuted }]}>{u}</Text>
-                </TouchableOpacity>
-              ))}
+              {UNITS.map((unit) => {
+                const active = product.unit === unit;
+                return (
+                  <TouchableOpacity
+                    key={unit}
+                    style={[
+                      styles.unitChip,
+                      active
+                        ? { backgroundColor: palette.primary, borderColor: palette.primary }
+                        : { backgroundColor: colors.surface, borderColor: colors.border },
+                    ]}
+                    onPress={() => updateProduct(product.id, 'unit', unit)}
+                  >
+                    <Text style={[styles.unitChipText, { color: active ? '#FFFFFF' : colors.textMuted }]}>{unit}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
-            {item && (
-              <View style={[styles.priceResult, { backgroundColor: isBest ? ACCENT + '15' : colors.surface }]}>
-                <Text style={[styles.priceResultText, { color: isBest ? ACCENT : colors.text }]}>
-                  {item.unitPrice < 0.01
-                    ? `${(item.unitPrice * 1000).toFixed(2)} per 1000 ${item.baseUnit}`
-                    : `${item.unitPrice.toFixed(4)} per ${item.baseUnit}`}
-                </Text>
-              </View>
-            )}
+            <View
+              style={[
+                styles.unitPriceBanner,
+                {
+                  backgroundColor: withAlpha(palette.primary, colors.bg === '#0B1120' ? '18' : '10'),
+                  borderColor: withAlpha(palette.primary, '24'),
+                },
+              ]}
+            >
+              <Text style={[styles.unitPriceLabel, { color: colors.textMuted }]}>Unit Price</Text>
+              <Text style={[styles.unitPriceValue, { color: colors.text }]}>
+                {item ? formatUnitPrice(item) : 'Add price and quantity'}
+              </Text>
+            </View>
           </View>
         );
       })}
 
-      <TouchableOpacity style={[styles.addBtn, { borderColor: ACCENT }]} onPress={addProduct}>
+      <TouchableOpacity style={[styles.addButton, { borderColor: withAlpha(ACCENT, '38') }]} onPress={addProduct}>
         <Ionicons name="add" size={20} color={ACCENT} />
-        <Text style={[styles.addBtnText, { color: ACCENT }]}>Add Product</Text>
+        <Text style={[styles.addButtonText, { color: ACCENT }]}>Add Another Product</Text>
       </TouchableOpacity>
 
-      {analysis && analysis.items.length >= 2 && (
-        <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={styles.summaryTitle}>Comparison Summary</Text>
-          {analysis.items.map((item, i) => {
-            const isBest = item.id === analysis.bestId;
-            const savings = analysis.bestId && !isBest
-              ? ((item.unitPrice - (analysis.items.find(x => x.id === analysis.bestId)?.unitPrice || 0)) / item.unitPrice * 100)
-              : 0;
-            return (
-              <View key={item.id} style={styles.summaryRow}>
-                <Text style={[styles.summaryName, { color: isBest ? ACCENT : colors.text }]}>
-                  {isBest ? '🏆 ' : ''}{item.name}
-                </Text>
-                <Text style={[styles.summaryPrice, { color: isBest ? ACCENT : colors.textMuted }]}>
-                  {item.unitPrice.toFixed(4)}/{item.baseUnit}
-                  {savings > 0 ? ` (+${savings.toFixed(1)}%)` : ''}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
-      )}
+      <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.summaryTitle, { color: colors.textMuted }]}>Comparison Summary</Text>
+        {analysis.summaryRows.length === 0 ? (
+          <Text style={[styles.summaryEmpty, { color: colors.textMuted }]}>
+            Enter product details to see grouped best deals.
+          </Text>
+        ) : (
+          analysis.summaryRows.map((group) => (
+            <View key={group.baseUnit} style={styles.groupBlock}>
+              <Text style={[styles.groupTitle, { color: colors.text }]}>Compared as {group.baseUnit}</Text>
+              {group.items.map((item, index) => {
+                const isBest = analysis.bestIds.has(item.id);
+                return (
+                  <View
+                    key={item.id}
+                    style={[
+                      styles.summaryRow,
+                      index < group.items.length - 1 ? { borderBottomWidth: 1, borderBottomColor: colors.border } : null,
+                    ]}
+                  >
+                    <View style={styles.summaryLeft}>
+                      <Ionicons name={isBest ? 'trophy' : 'pricetag-outline'} size={16} color={isBest ? '#F59E0B' : colors.textMuted} />
+                      <Text style={[styles.summaryName, { color: colors.text }]}>{item.name}</Text>
+                    </View>
+                    <Text style={[styles.summaryValue, { color: isBest ? ACCENT : colors.textMuted }]}>
+                      {formatUnitPrice(item)}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          ))
+        )}
+      </View>
     </ScreenShell>
   );
 }
 
-const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
+const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
   StyleSheet.create({
-    hint: { fontSize: 12, fontFamily: Fonts.regular, textAlign: 'center', marginBottom: Spacing.lg },
-    card: { borderRadius: Radii.xl, borderWidth: 1, padding: Spacing.lg, marginBottom: Spacing.md, position: 'relative' },
-    bestBadge: { position: 'absolute', top: -10, left: Spacing.lg, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 3, borderRadius: Radii.pill },
-    bestBadgeText: { fontSize: 11, fontFamily: Fonts.bold, color: '#fff' },
-    removeBtn: { position: 'absolute', top: Spacing.sm, right: Spacing.sm, zIndex: 1 },
-    nameInput: { fontSize: 16, fontFamily: Fonts.bold, marginBottom: Spacing.md, padding: 0 },
-    fieldRow: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.sm },
-    fieldLabel: { fontSize: 10, fontFamily: Fonts.bold, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 },
-    input: { borderWidth: 1.5, borderRadius: Radii.md, padding: Spacing.sm, fontSize: 16, fontFamily: Fonts.bold },
-    unitRow: { flexDirection: 'row', gap: 4, flexWrap: 'wrap', marginBottom: Spacing.md },
-    unitBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radii.pill, borderWidth: 1, borderColor: c.border },
-    unitBtnText: { fontSize: 11, fontFamily: Fonts.semibold },
-    priceResult: { padding: Spacing.sm, borderRadius: Radii.md, alignItems: 'center' },
-    priceResultText: { fontSize: 14, fontFamily: Fonts.bold },
-    addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: Radii.lg, borderWidth: 1.5, borderStyle: 'dashed', marginBottom: Spacing.lg },
-    addBtnText: { fontSize: 14, fontFamily: Fonts.semibold },
-    summaryCard: { borderRadius: Radii.lg, borderWidth: 1, padding: Spacing.lg },
-    summaryTitle: { fontSize: 11, fontFamily: Fonts.bold, color: c.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: Spacing.md },
-    summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 },
-    summaryName: { fontSize: 14, fontFamily: Fonts.semibold },
-    summaryPrice: { fontSize: 12, fontFamily: Fonts.medium },
+    heroCard: {
+      borderRadius: Radii.xl,
+      padding: Spacing.xl,
+      gap: Spacing.sm,
+    },
+    heroEyebrow: {
+      fontSize: 12,
+      fontFamily: Fonts.semibold,
+      color: '#EDE9FE',
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+    },
+    heroTitle: {
+      fontSize: 30,
+      lineHeight: 36,
+      fontFamily: Fonts.bold,
+      color: '#FFFFFF',
+    },
+    heroCopy: {
+      fontSize: 14,
+      lineHeight: 20,
+      fontFamily: Fonts.medium,
+      color: '#F5F3FF',
+    },
+    productCard: {
+      borderWidth: 1,
+      borderRadius: Radii.xl,
+      padding: Spacing.lg,
+      gap: Spacing.md,
+    },
+    productTopRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: Spacing.md,
+    },
+    productAccent: {
+      width: 10,
+      alignSelf: 'stretch',
+      borderRadius: Radii.pill,
+    },
+    productHeaderText: {
+      flex: 1,
+      gap: 4,
+    },
+    nameInput: {
+      fontSize: 18,
+      fontFamily: Fonts.bold,
+      padding: 0,
+    },
+    productTag: {
+      fontSize: 12,
+      fontFamily: Fonts.semibold,
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+    },
+    removeButton: {
+      paddingTop: 2,
+    },
+    fieldGrid: {
+      flexDirection: 'row',
+      gap: Spacing.md,
+    },
+    field: {
+      flex: 1,
+      gap: Spacing.sm,
+    },
+    fieldLabel: {
+      fontSize: 12,
+      fontFamily: Fonts.semibold,
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+    },
+    input: {
+      borderWidth: 1,
+      borderRadius: Radii.lg,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.md,
+      fontSize: 18,
+      fontFamily: Fonts.bold,
+    },
+    unitRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: Spacing.sm,
+    },
+    unitChip: {
+      borderWidth: 1,
+      borderRadius: Radii.pill,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: 8,
+    },
+    unitChipText: {
+      fontSize: 12,
+      fontFamily: Fonts.semibold,
+    },
+    unitPriceBanner: {
+      borderWidth: 1,
+      borderRadius: Radii.lg,
+      padding: Spacing.md,
+      gap: 4,
+    },
+    unitPriceLabel: {
+      fontSize: 11,
+      fontFamily: Fonts.semibold,
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+    },
+    unitPriceValue: {
+      fontSize: 18,
+      fontFamily: Fonts.bold,
+    },
+    addButton: {
+      borderWidth: 1.5,
+      borderStyle: 'dashed',
+      borderRadius: Radii.xl,
+      paddingVertical: 15,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+    },
+    addButtonText: {
+      fontSize: 15,
+      fontFamily: Fonts.semibold,
+    },
+    summaryCard: {
+      borderWidth: 1,
+      borderRadius: Radii.xl,
+      padding: Spacing.lg,
+      gap: Spacing.md,
+    },
+    summaryTitle: {
+      fontSize: 12,
+      fontFamily: Fonts.semibold,
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+    },
+    summaryEmpty: {
+      fontSize: 14,
+      lineHeight: 20,
+      fontFamily: Fonts.medium,
+    },
+    groupBlock: {
+      gap: Spacing.sm,
+    },
+    groupTitle: {
+      fontSize: 15,
+      fontFamily: Fonts.semibold,
+    },
+    summaryRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: Spacing.md,
+      paddingVertical: Spacing.sm,
+    },
+    summaryLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Spacing.sm,
+      flex: 1,
+    },
+    summaryName: {
+      fontSize: 14,
+      fontFamily: Fonts.medium,
+    },
+    summaryValue: {
+      fontSize: 13,
+      fontFamily: Fonts.bold,
+    },
   });

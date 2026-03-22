@@ -1,19 +1,22 @@
-import { useState, useMemo, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Vibration } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View, Vibration } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
+import { withAlpha } from '@/lib/color-utils';
 
 type BtnVariant = 'num' | 'op' | 'eq' | 'clr' | 'fn';
-
 type BtnDef = { label: string; value: string; variant: BtnVariant; span?: number };
+
+const ACCENT = '#3B82F6';
 
 const BUTTON_ROWS: BtnDef[][] = [
   [
     { label: 'AC', value: 'AC', variant: 'clr' },
-    { label: '±', value: '±', variant: 'fn' },
+    { label: 'DEL', value: 'DEL', variant: 'fn' },
     { label: '%', value: '%', variant: 'fn' },
     { label: '÷', value: '/', variant: 'op' },
   ],
@@ -42,12 +45,24 @@ const BUTTON_ROWS: BtnDef[][] = [
   ],
 ];
 
-function safeEval(expr: string): string {
+function formatExpression(expression: string) {
+  return expression
+    .replace(/\*/g, ' × ')
+    .replace(/\//g, ' ÷ ')
+    .replace(/-/g, ' − ')
+    .replace(/\+/g, ' + ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function safeEval(expression: string) {
   try {
-    const clean = expr.replace(/[^0-9+\-*/.() ]/g, '');
-    const result = Function('"use strict"; return (' + clean + ')')() as number;
-    if (!isFinite(result)) return 'Error';
-    return String(parseFloat(result.toFixed(10)));
+    const clean = expression.replace(/[^0-9+\-*/.() ]/g, '');
+    const result = Function(`"use strict"; return (${clean})`)() as number;
+
+    if (!Number.isFinite(result)) return 'Error';
+
+    return String(Number.parseFloat(result.toFixed(10)));
   } catch {
     return 'Error';
   }
@@ -58,96 +73,209 @@ export default function BasicCalculatorScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const [display, setDisplay] = useState('0');
-  const [expr, setExpr] = useState('');
+  const [expression, setExpression] = useState('');
   const [fresh, setFresh] = useState(true);
+  const [history, setHistory] = useState<string[]>([]);
 
-  const press = useCallback((val: string) => {
+  const preview = useMemo(() => {
+    if (!expression || expression.endsWith('=')) return null;
+    if (display === 'Error') return null;
+
+    const result = safeEval(`${expression}${display}`);
+    return result === 'Error' ? null : result;
+  }, [display, expression]);
+
+  const press = useCallback((value: string) => {
     Vibration.vibrate(10);
 
-    if (val === 'AC') {
-      setDisplay('0'); setExpr(''); setFresh(true); return;
+    if (value === 'AC') {
+      setDisplay('0');
+      setExpression('');
+      setFresh(true);
+      return;
     }
-    if (val === '=') {
-      if (!expr && display === '0') return;
-      const full = expr + display;
+
+    if (value === 'DEL') {
+      if (fresh || display === 'Error') {
+        setDisplay('0');
+        return;
+      }
+
+      if (display.length <= 1 || (display.length === 2 && display.startsWith('-'))) {
+        setDisplay('0');
+        setFresh(true);
+        return;
+      }
+
+      setDisplay((current) => current.slice(0, -1));
+      return;
+    }
+
+    if (value === '=') {
+      if (!expression && display === '0') return;
+
+      const full = `${expression}${display}`;
       const result = safeEval(full);
-      setExpr(full + ' =');
+
+      setHistory((current) => [`${formatExpression(full)} = ${result}`, ...current].slice(0, 6));
+      setExpression(`${full}=`);
       setDisplay(result);
       setFresh(true);
       return;
     }
-    if (['+', '-', '*', '/'].includes(val)) {
-      if (display === 'Error') { setDisplay('0'); setExpr(''); setFresh(true); return; }
-      setExpr((expr.endsWith('=') ? display : expr + display) + ' ' + val + ' ');
+
+    if (['+', '-', '*', '/'].includes(value)) {
+      if (display === 'Error') {
+        setDisplay('0');
+        setExpression('');
+        setFresh(true);
+        return;
+      }
+
+      if (fresh && expression && !expression.endsWith('=')) {
+        setExpression((current) => `${current.slice(0, -1)}${value}`);
+        return;
+      }
+
+      const base = expression.endsWith('=') ? display : `${expression}${display}`;
+      setExpression(`${base}${value}`);
       setFresh(true);
       return;
     }
-    if (val === '±') { setDisplay(String(parseFloat(display) * -1)); return; }
-    if (val === '%') { setDisplay(String(parseFloat(display) / 100)); return; }
-    if (val === '.') {
-      if (fresh) { setDisplay('0.'); setFresh(false); return; }
-      if (!display.includes('.')) setDisplay(display + '.');
+
+    if (value === '%') {
+      setDisplay(String((Number.parseFloat(display) || 0) / 100));
       return;
     }
-    // digit
-    if (fresh || display === '0') {
-      setDisplay(val);
-      setFresh(false);
-      if (expr.endsWith('=')) setExpr('');
-    } else {
-      if (display.length < 15) setDisplay(display + val);
-    }
-  }, [display, expr, fresh]);
 
-  const variantColor = (v: BtnVariant) => {
-    if (v === 'eq') return { bg: colors.accent, text: '#fff' };
-    if (v === 'op') return { bg: colors.accentLight, text: colors.accent };
-    if (v === 'clr') return { bg: colors.errorLight, text: colors.error };
-    if (v === 'fn') return { bg: colors.glass, text: colors.textSub };
-    return { bg: colors.surface, text: colors.text };
+    if (value === '.') {
+      if (fresh) {
+        setDisplay('0.');
+        setFresh(false);
+        if (expression.endsWith('=')) setExpression('');
+        return;
+      }
+
+      if (!display.includes('.')) {
+        setDisplay((current) => `${current}.`);
+      }
+
+      return;
+    }
+
+    if (fresh || display === '0' || display === 'Error') {
+      setDisplay(value);
+      setFresh(false);
+      if (expression.endsWith('=')) setExpression('');
+      return;
+    }
+
+    setDisplay((current) => (current.length < 15 ? `${current}${value}` : current));
+  }, [display, expression, fresh]);
+
+  const variantColor = (variant: BtnVariant) => {
+    if (variant === 'eq') return { background: ACCENT, text: '#FFFFFF' };
+    if (variant === 'op') return { background: withAlpha(ACCENT, '16'), text: ACCENT };
+    if (variant === 'clr') return { background: colors.errorLight, text: colors.error };
+    if (variant === 'fn') return { background: colors.surface, text: colors.textSub };
+    return { background: colors.card, text: colors.text };
   };
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top', 'bottom']}>
-      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={[styles.headerButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+        >
           <Ionicons name="chevron-back" size={22} color={colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: '#3B82F6' }]}>Calculator</Text>
-        <View style={{ width: 38 }} />
+        <View style={styles.headerText}>
+          <Text style={[styles.headerEyebrow, { color: colors.textMuted }]}>Everyday Math</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Calculator</Text>
+        </View>
+        <View style={[styles.historyBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={[styles.historyBadgeText, { color: ACCENT }]}>{history.length}</Text>
+        </View>
       </View>
 
-      {/* Display */}
-      <View style={[styles.display, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Text style={[styles.exprText, { color: colors.textMuted }]} numberOfLines={1}>{expr || ' '}</Text>
+      <LinearGradient
+        colors={['#0F172A', '#1D4ED8', '#60A5FA']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.displayCard}
+      >
+        <Text style={styles.expressionText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>
+          {expression ? formatExpression(expression.replace(/=$/, ' =')) : ' '}
+        </Text>
         <Text
-          style={[styles.displayText, { color: colors.text, fontSize: display.length > 12 ? 30 : 44 }]}
+          style={[
+            styles.displayText,
+            {
+              fontSize:
+                display.length > 14
+                  ? 48
+                  : display.length > 10
+                    ? 62
+                    : 78,
+            },
+          ]}
           numberOfLines={1}
           adjustsFontSizeToFit
         >
           {display}
         </Text>
-      </View>
+        {preview ? <Text style={styles.previewText}>Preview: {preview}</Text> : null}
+      </LinearGradient>
 
-      {/* Buttons */}
+      {history.length > 0 ? (
+        <View style={[styles.historyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.historyHeader}>
+            <Text style={[styles.historyTitle, { color: colors.textMuted }]}>Recent</Text>
+            <TouchableOpacity onPress={() => setHistory([])}>
+              <Text style={[styles.clearText, { color: ACCENT }]}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+          {history.map((item, index) => (
+            <Text key={`${item}-${index}`} style={[styles.historyItem, { color: colors.text }]}>
+              {item}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+
       <View style={styles.grid}>
-        {BUTTON_ROWS.map((row, rowIndex) => (
-          <View key={rowIndex} style={styles.row}>
-            {row.map((btn) => {
-              const vc = variantColor(btn.variant);
+        {BUTTON_ROWS.map((row) => (
+          <View key={row.map((item) => item.label).join('-')} style={styles.row}>
+            {row.map((button) => {
+              const palette = variantColor(button.variant);
               return (
                 <TouchableOpacity
-                  key={btn.label}
+                  key={button.label}
                   style={[
-                    styles.btn,
-                    { backgroundColor: vc.bg, flex: btn.span ?? 1 },
-                    btn.variant === 'eq' && styles.btnEq,
+                    styles.button,
+                    {
+                      flex: button.span ?? 1,
+                      backgroundColor: palette.background,
+                      borderColor: button.variant === 'eq' ? ACCENT : colors.border,
+                    },
                   ]}
-                  onPress={() => press(btn.value)}
-                  activeOpacity={0.75}
+                  onPress={() => press(button.value)}
+                  activeOpacity={0.82}
                 >
-                  <Text style={[styles.btnLabel, { color: vc.text }]}>{btn.label}</Text>
+                  <Text
+                    style={[
+                      styles.buttonLabel,
+                      { color: palette.text },
+                      button.variant === 'op'
+                        ? styles.buttonLabelOperator
+                        : button.label.length <= 2
+                          ? styles.buttonLabelLarge
+                          : null,
+                    ]}
+                  >
+                    {button.label}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
@@ -160,44 +288,133 @@ export default function BasicCalculatorScreen() {
 
 const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
   StyleSheet.create({
-    root: { flex: 1 },
+    root: {
+      flex: 1,
+      paddingHorizontal: Spacing.md,
+      paddingBottom: Spacing.md,
+      gap: Spacing.md,
+    },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingHorizontal: Spacing.lg,
-      paddingVertical: Spacing.md,
-      backgroundColor: colors.surface,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-      gap: Spacing.sm,
+      gap: Spacing.md,
+      paddingTop: Spacing.md,
     },
-    backBtn: {
-      width: 38, height: 38, borderRadius: Radii.md, alignItems: 'center', justifyContent: 'center',
-      backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border,
-    },
-    title: { flex: 1, textAlign: 'center', fontSize: 18, fontFamily: Fonts.bold },
-    display: {
-      margin: Spacing.lg,
-      padding: Spacing.xl,
-      borderRadius: Radii.xl,
+    headerButton: {
+      width: 42,
+      height: 42,
+      borderRadius: Radii.md,
       borderWidth: 1,
-      alignItems: 'flex-end',
-      minHeight: 110,
-      justifyContent: 'flex-end',
-    },
-    exprText: { fontSize: 14, fontFamily: Fonts.regular, marginBottom: 4 },
-    displayText: { fontFamily: Fonts.regular, letterSpacing: -1 },
-    grid: { flex: 1, paddingHorizontal: Spacing.md, paddingBottom: Spacing.md, gap: 10 },
-    row: { flexDirection: 'row', flex: 1, gap: 10 },
-    btn: {
-      flex: 1,
-      margin: 5,
-      borderRadius: Radii.lg,
       alignItems: 'center',
       justifyContent: 'center',
-      paddingVertical: 18,
-      flexDirection: 'row',
     },
-    btnEq: { backgroundColor: '#3B82F6' },
-    btnLabel: { fontSize: 22, fontFamily: Fonts.medium },
+    headerText: {
+      flex: 1,
+      gap: 2,
+    },
+    headerEyebrow: {
+      fontSize: 11,
+      fontFamily: Fonts.semibold,
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+    },
+    headerTitle: {
+      fontSize: 24,
+      fontFamily: Fonts.bold,
+    },
+    historyBadge: {
+      minWidth: 42,
+      height: 42,
+      borderRadius: Radii.md,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: Spacing.sm,
+    },
+    historyBadgeText: {
+      fontSize: 16,
+      fontFamily: Fonts.bold,
+    },
+    displayCard: {
+      borderRadius: Radii.xl,
+      padding: Spacing.xl,
+      minHeight: 250,
+      justifyContent: 'flex-end',
+      gap: 6,
+    },
+    expressionText: {
+      fontSize: 22,
+      lineHeight: 28,
+      fontFamily: Fonts.semibold,
+      color: '#E0EEFF',
+      letterSpacing: -0.3,
+      textAlign: 'right',
+    },
+    displayText: {
+      fontFamily: Fonts.bold,
+      color: '#FFFFFF',
+      letterSpacing: -1.4,
+      lineHeight: 86,
+      textAlign: 'right',
+    },
+    previewText: {
+      fontSize: 12,
+      fontFamily: Fonts.medium,
+      color: '#DBEAFE',
+      textAlign: 'right',
+    },
+    historyCard: {
+      borderWidth: 1,
+      borderRadius: Radii.xl,
+      padding: Spacing.lg,
+      gap: Spacing.sm,
+    },
+    historyHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    historyTitle: {
+      fontSize: 12,
+      fontFamily: Fonts.semibold,
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+    },
+    clearText: {
+      fontSize: 13,
+      fontFamily: Fonts.semibold,
+    },
+    historyItem: {
+      fontSize: 14,
+      fontFamily: Fonts.medium,
+    },
+    grid: {
+      flex: 1,
+      gap: Spacing.sm,
+    },
+    row: {
+      flex: 1,
+      flexDirection: 'row',
+      gap: Spacing.sm,
+    },
+    button: {
+      flex: 1,
+      borderWidth: 1,
+      borderRadius: Radii.xl,
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: 72,
+    },
+    buttonLabel: {
+      fontSize: 18,
+      fontFamily: Fonts.bold,
+    },
+    buttonLabelLarge: {
+      fontSize: 28,
+    },
+    buttonLabelOperator: {
+      fontSize: 34,
+      fontFamily: Fonts.bold,
+      lineHeight: 36,
+    },
   });

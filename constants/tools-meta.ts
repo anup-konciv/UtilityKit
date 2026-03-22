@@ -12,7 +12,7 @@ export const TOOLS: ToolMeta[] = [
   {
     id: 'basic-calc',
     label: 'Calculator',
-    description: 'Standard arithmetic',
+    description: 'Live preview, history & clean keypad',
     icon: 'calculator-outline',
     route: '/tools/basic-calculator',
     accent: '#3B82F6',
@@ -39,7 +39,7 @@ export const TOOLS: ToolMeta[] = [
   {
     id: 'tip-calc',
     label: 'Tip Calculator',
-    description: 'Split bills & tips',
+    description: 'Service presets, smart splits & round-up tips',
     icon: 'restaurant-outline',
     route: '/tools/tip-calculator',
     accent: '#F59E0B',
@@ -147,7 +147,7 @@ export const TOOLS: ToolMeta[] = [
   {
     id: 'birthday',
     label: 'Birthday Tracker',
-    description: 'Upcoming birthdays, notes & age previews',
+    description: 'Color-coded birthdays, notes & age previews',
     icon: 'gift-outline',
     route: '/tools/birthday-tracker',
     accent: '#F43F5E',
@@ -228,7 +228,7 @@ export const TOOLS: ToolMeta[] = [
   {
     id: 'world-clock',
     label: 'World Clock',
-    description: 'Time across timezones',
+    description: 'Capitals, global timezones and watch-face clocks',
     icon: 'globe-outline',
     route: '/tools/world-clock',
     accent: '#3B82F6',
@@ -255,7 +255,7 @@ export const TOOLS: ToolMeta[] = [
   {
     id: 'percentage-calc',
     label: 'Percentage Calc',
-    description: 'Percentages, discounts & changes',
+    description: 'Percent studio for discounts, shares & change',
     icon: 'analytics-outline',
     route: '/tools/percentage-calculator',
     accent: '#F97316',
@@ -327,7 +327,7 @@ export const TOOLS: ToolMeta[] = [
   {
     id: 'random-picker',
     label: 'Random Picker',
-    description: 'Pick random items from a list',
+    description: 'List draws, multi-pick winners & number ranges',
     icon: 'shuffle-outline',
     route: '/tools/random-picker',
     accent: '#D946EF',
@@ -372,7 +372,7 @@ export const TOOLS: ToolMeta[] = [
   {
     id: 'base-converter',
     label: 'Base Converter',
-    description: 'Binary, Octal, Decimal & Hex',
+    description: 'Live base convert with bit and ASCII insights',
     icon: 'git-branch-outline',
     route: '/tools/base-converter',
     accent: '#7C3AED',
@@ -399,7 +399,7 @@ export const TOOLS: ToolMeta[] = [
   {
     id: 'fuel-cost',
     label: 'Fuel Cost',
-    description: 'Calculate trip fuel expenses',
+    description: 'Trip fuel, reserve buffer & split cost planner',
     icon: 'speedometer-outline',
     route: '/tools/fuel-cost',
     accent: '#EA580C',
@@ -417,7 +417,7 @@ export const TOOLS: ToolMeta[] = [
   {
     id: 'unit-price',
     label: 'Price Compare',
-    description: 'Compare unit prices of products',
+    description: 'Colorful unit-price comparison by true best deal',
     icon: 'pricetag-outline',
     route: '/tools/unit-price',
     accent: '#9333EA',

@@ -14,6 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
+import { pickSeededValue, withAlpha } from '@/lib/color-utils';
 import { KEYS, loadJSON, saveJSON } from '@/lib/storage';
 import {
   formatBirthdayLabel,
@@ -27,6 +28,13 @@ import {
 } from '@/lib/date-utils';
 
 const ACCENT = '#F43F5E';
+
+type BirthdayPalette = {
+  primary: string;
+  deep: string;
+  soft: string;
+  contrast: string;
+};
 
 type Birthday = {
   id: string;
@@ -58,6 +66,7 @@ type BirthdayCard = Birthday & {
   turningAge: number | null;
   currentAge: number | null;
   searchBlob: string;
+  palette: BirthdayPalette;
 };
 
 type ListItem =
@@ -79,6 +88,15 @@ const FILTERS: { key: FilterMode; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'soon', label: 'Next 30 Days' },
   { key: 'month', label: 'This Month' },
+];
+
+const BIRTHDAY_PALETTES: BirthdayPalette[] = [
+  { primary: '#F43F5E', deep: '#9F1239', soft: '#FFF1F2', contrast: '#FFFFFF' },
+  { primary: '#8B5CF6', deep: '#5B21B6', soft: '#F5F3FF', contrast: '#FFFFFF' },
+  { primary: '#0EA5E9', deep: '#0C4A6E', soft: '#F0F9FF', contrast: '#FFFFFF' },
+  { primary: '#14B8A6', deep: '#115E59', soft: '#F0FDFA', contrast: '#FFFFFF' },
+  { primary: '#F59E0B', deep: '#92400E', soft: '#FFFBEB', contrast: '#FFFFFF' },
+  { primary: '#EC4899', deep: '#9D174D', soft: '#FDF2F8', contrast: '#FFFFFF' },
 ];
 
 function generateId() {
@@ -139,6 +157,7 @@ export default function BirthdayTrackerScreen() {
     return birthdays
       .filter((item) => isValidBirthday(item.day, item.month, item.year))
       .map((item) => {
+        const palette = pickSeededValue(BIRTHDAY_PALETTES, `${item.id}-${item.name}`);
         const nextBirthday = getNextBirthday(item.day, item.month, today);
         const birthDate =
           item.year != null ? parseCalendarDate(item.day, item.month, item.year) : null;
@@ -159,6 +178,7 @@ export default function BirthdayTrackerScreen() {
           turningAge: item.year != null ? nextBirthday.date.getFullYear() - item.year : null,
           currentAge: ageBreakdown?.years ?? null,
           searchBlob,
+          palette,
         };
       })
       .sort((a, b) => {
@@ -274,12 +294,14 @@ export default function BirthdayTrackerScreen() {
     }
 
     const nextBirthday = getNextBirthday(day, month, today);
+    const palette = pickSeededValue(BIRTHDAY_PALETTES, name);
 
     return {
       name,
       nextDateLabel: formatLongDate(nextBirthday.date),
       daysUntil: nextBirthday.daysUntil,
       turningAge: year != null ? nextBirthday.date.getFullYear() - year : null,
+      palette,
     };
   }, [form.day, form.month, form.name, form.year, today]);
 
@@ -383,17 +405,33 @@ export default function BirthdayTrackerScreen() {
     const entry = item.data;
     const isToday = entry.daysUntil === 0;
     const isSoon = entry.daysUntil > 0 && entry.daysUntil <= 7;
-    const cardBackground = isToday ? `${ACCENT}14` : isSoon ? `${ACCENT}0D` : colors.card;
-    const cardBorder = isToday || isSoon ? `${ACCENT}40` : colors.border;
-    const badgeBackground = isToday ? ACCENT : `${ACCENT}12`;
-    const badgeTextColor = isToday ? '#FFFFFF' : ACCENT;
+    const cardBorder = isToday || isSoon ? withAlpha(entry.palette.primary, '42') : withAlpha(entry.palette.primary, '20');
+    const badgeBackground = isToday ? entry.palette.primary : withAlpha(entry.palette.primary, '12');
+    const badgeTextColor = isToday ? entry.palette.contrast : entry.palette.primary;
+    const cardColors: readonly [string, string] = isToday
+      ? [withAlpha(entry.palette.primary, '24'), withAlpha(entry.palette.deep, '12')]
+      : isSoon
+        ? [withAlpha(entry.palette.primary, '16'), withAlpha(entry.palette.deep, '08')]
+        : [withAlpha(entry.palette.primary, '10'), colors.card];
 
     return (
-      <View style={[styles.birthdayCard, { backgroundColor: cardBackground, borderColor: cardBorder }]}>
+      <LinearGradient
+        colors={cardColors}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.birthdayCard, { borderColor: cardBorder }]}
+      >
         <View style={styles.cardTopRow}>
           <View style={styles.cardIdentityRow}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{entry.initials}</Text>
+            <View style={[styles.avatarRing, { backgroundColor: withAlpha(entry.palette.primary, '14') }]}>
+              <LinearGradient
+                colors={[entry.palette.primary, entry.palette.deep]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.avatar}
+              >
+                <Text style={styles.avatarText}>{entry.initials}</Text>
+              </LinearGradient>
             </View>
             <View style={styles.cardBody}>
               <View style={styles.cardNameRow}>
@@ -424,8 +462,8 @@ export default function BirthdayTrackerScreen() {
 
         <View style={styles.metaRow}>
           {entry.turningAge != null ? (
-            <View style={[styles.metaPill, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Ionicons name="sparkles-outline" size={14} color={ACCENT} />
+            <View style={[styles.metaPill, { backgroundColor: withAlpha(entry.palette.primary, '10'), borderColor: withAlpha(entry.palette.primary, '22') }]}>
+              <Ionicons name="sparkles-outline" size={14} color={entry.palette.primary} />
               <Text style={[styles.metaPillText, { color: colors.text }]}>Turns {entry.turningAge}</Text>
             </View>
           ) : null}
@@ -440,10 +478,10 @@ export default function BirthdayTrackerScreen() {
         <View style={styles.cardActions}>
           <TouchableOpacity
             onPress={() => openEdit(entry)}
-            style={[styles.actionButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            style={[styles.actionButton, { backgroundColor: withAlpha(entry.palette.primary, '10'), borderColor: withAlpha(entry.palette.primary, '22') }]}
           >
-            <Ionicons name="create-outline" size={16} color={colors.text} />
-            <Text style={[styles.actionButtonText, { color: colors.text }]}>Edit</Text>
+            <Ionicons name="create-outline" size={16} color={entry.palette.primary} />
+            <Text style={[styles.actionButtonText, { color: entry.palette.primary }]}>Edit</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => handleDelete(entry.id)}
@@ -453,7 +491,7 @@ export default function BirthdayTrackerScreen() {
             <Text style={[styles.actionButtonText, { color: '#EF4444' }]}>Delete</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </LinearGradient>
     );
   }
 
@@ -666,19 +704,19 @@ export default function BirthdayTrackerScreen() {
 
             {formPreview ? (
               <LinearGradient
-                colors={['#FFF1F2', '#FFE4E6']}
+                colors={[formPreview.palette.soft, withAlpha(formPreview.palette.primary, '16')]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.previewCard}
               >
-                <Text style={styles.previewEyebrow}>Preview</Text>
-                <Text style={styles.previewTitle}>{formPreview.name}</Text>
-                <Text style={styles.previewCopy}>
+                <Text style={[styles.previewEyebrow, { color: formPreview.palette.primary }]}>Preview</Text>
+                <Text style={[styles.previewTitle, { color: formPreview.palette.deep }]}>{formPreview.name}</Text>
+                <Text style={[styles.previewCopy, { color: formPreview.palette.deep }]}>
                   {formPreview.daysUntil === 0
                     ? 'Celebration day is today.'
                     : `Next celebration in ${formPreview.daysUntil} day${formPreview.daysUntil === 1 ? '' : 's'}.`}
                 </Text>
-                <Text style={styles.previewMeta}>
+                <Text style={[styles.previewMeta, { color: formPreview.palette.deep }]}>
                   {formPreview.nextDateLabel}
                   {formPreview.turningAge != null ? ` - Turns ${formPreview.turningAge}` : ''}
                 </Text>
@@ -838,7 +876,14 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       width: 48,
       height: 48,
       borderRadius: 24,
-      backgroundColor: ACCENT,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    avatarRing: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
       alignItems: 'center',
       justifyContent: 'center',
       flexShrink: 0,
@@ -1038,25 +1083,21 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
     previewEyebrow: {
       fontSize: 11,
       fontFamily: Fonts.semibold,
-      color: ACCENT,
       textTransform: 'uppercase',
       letterSpacing: 0.8,
     },
     previewTitle: {
       fontSize: 20,
       fontFamily: Fonts.bold,
-      color: '#881337',
     },
     previewCopy: {
       fontSize: 14,
       fontFamily: Fonts.medium,
-      color: '#9F1239',
     },
     previewMeta: {
       fontSize: 13,
       lineHeight: 18,
       fontFamily: Fonts.regular,
-      color: '#9F1239',
     },
     helperText: {
       fontSize: 12,

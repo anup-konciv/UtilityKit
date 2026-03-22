@@ -1,171 +1,409 @@
-import { useState, useMemo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { useMemo, useState } from 'react';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
+import { LinearGradient } from 'expo-linear-gradient';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
+import { withAlpha } from '@/lib/color-utils';
 
 const ACCENT = '#7C3AED';
 
-type Base = { name: string; prefix: string; radix: number; placeholder: string; regex: RegExp };
+type BaseDef = {
+  name: string;
+  prefix: string;
+  radix: number;
+  placeholder: string;
+  regex: RegExp;
+  note: string;
+};
 
-const BASES: Base[] = [
-  { name: 'Binary', prefix: '0b', radix: 2, placeholder: '1010', regex: /^[01]*$/ },
-  { name: 'Octal', prefix: '0o', radix: 8, placeholder: '12', regex: /^[0-7]*$/ },
-  { name: 'Decimal', prefix: '', radix: 10, placeholder: '10', regex: /^-?\d*$/ },
-  { name: 'Hexadecimal', prefix: '0x', radix: 16, placeholder: 'A', regex: /^[0-9a-fA-F]*$/ },
+const BASES: BaseDef[] = [
+  { name: 'Binary', prefix: '0b', radix: 2, placeholder: '1010', regex: /^[01]*$/, note: 'Bits and flags' },
+  { name: 'Octal', prefix: '0o', radix: 8, placeholder: '12', regex: /^[0-7]*$/, note: 'Compact groups of three bits' },
+  { name: 'Decimal', prefix: '', radix: 10, placeholder: '10', regex: /^-?\d*$/, note: 'Human-friendly base 10' },
+  { name: 'Hex', prefix: '0x', radix: 16, placeholder: 'A4', regex: /^[0-9a-fA-F]*$/, note: 'Memory, color, and byte notation' },
 ];
+
+function formatBinaryGroups(value: string) {
+  return value.replace(/(.{4})/g, '$1 ').trim();
+}
 
 export default function BaseConverterScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const [activeBase, setActiveBase] = useState(2); // Decimal
-  const [inputVal, setInputVal] = useState('');
+  const [activeBase, setActiveBase] = useState(2);
+  const [inputVal, setInputVal] = useState('255');
+  const [copiedLabel, setCopiedLabel] = useState('');
+
+  const active = BASES[activeBase];
 
   const decimalValue = useMemo(() => {
     if (!inputVal.trim()) return null;
-    const parsed = parseInt(inputVal, BASES[activeBase].radix);
-    return isNaN(parsed) ? null : parsed;
-  }, [inputVal, activeBase]);
+    const parsed = Number.parseInt(inputVal, active.radix);
+    return Number.isNaN(parsed) ? null : parsed;
+  }, [active.radix, inputVal]);
 
   const conversions = useMemo(() => {
-    if (decimalValue === null) return BASES.map(() => '');
-    return BASES.map(b => {
-      const val = decimalValue.toString(b.radix);
-      return b.radix === 16 ? val.toUpperCase() : val;
+    if (decimalValue == null) return BASES.map(() => '');
+    return BASES.map((item) => {
+      const value = decimalValue.toString(item.radix);
+      return item.radix === 16 ? value.toUpperCase() : value;
     });
   }, [decimalValue]);
 
-  const handleInput = (text: string) => {
-    if (text === '' || text === '-' || BASES[activeBase].regex.test(text)) {
-      setInputVal(text);
-    }
-  };
-
-  const copyValue = (val: string) => {
-    if (val) Clipboard.setStringAsync(val);
-  };
-
   const bitInfo = useMemo(() => {
-    if (decimalValue === null) return null;
-    const bin = (decimalValue >>> 0).toString(2);
+    if (decimalValue == null || decimalValue < 0) return null;
+    const binary = decimalValue.toString(2);
+
     return {
-      bits: bin.length,
-      ones: bin.split('').filter(b => b === '1').length,
-      zeros: bin.split('').filter(b => b === '0').length,
+      bitLength: binary.length,
+      ones: binary.split('').filter((char) => char === '1').length,
+      zeros: binary.split('').filter((char) => char === '0').length,
       isPowerOf2: decimalValue > 0 && (decimalValue & (decimalValue - 1)) === 0,
       isEven: decimalValue % 2 === 0,
+      ascii: decimalValue >= 32 && decimalValue <= 126 ? String.fromCharCode(decimalValue) : null,
     };
   }, [decimalValue]);
 
+  function handleInput(text: string) {
+    if (text === '' || text === '-' || active.regex.test(text)) {
+      setInputVal(text);
+    }
+  }
+
+  async function copyValue(label: string, value: string) {
+    if (!value) return;
+    await Clipboard.setStringAsync(value);
+    setCopiedLabel(label);
+  }
+
   return (
     <ScreenShell title="Base Converter" accentColor={ACCENT}>
-      {/* Input base selector */}
-      <View style={styles.baseRow}>
-        {BASES.map((b, i) => (
-          <TouchableOpacity
-            key={b.name}
-            style={[styles.baseBtn, activeBase === i && { backgroundColor: ACCENT, borderColor: ACCENT }]}
-            onPress={() => {
-              if (decimalValue !== null) {
-                const converted = decimalValue.toString(BASES[i].radix);
-                setInputVal(BASES[i].radix === 16 ? converted.toUpperCase() : converted);
-              } else {
-                setInputVal('');
-              }
-              setActiveBase(i);
-            }}
-          >
-            <Text style={[styles.baseBtnText, { color: activeBase === i ? '#fff' : colors.textMuted }]}>
-              {b.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      <LinearGradient
+        colors={['#4C1D95', '#7C3AED', '#C4B5FD']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.heroCard}
+      >
+        <Text style={styles.heroEyebrow}>Number Systems</Text>
+        <Text style={styles.heroTitle}>
+          {decimalValue == null ? '--' : decimalValue}
+        </Text>
+        <Text style={styles.heroCopy}>
+          Type in any supported base and instantly inspect the same value across binary, octal, decimal, and hex.
+        </Text>
+      </LinearGradient>
+
+      <View style={styles.baseGrid}>
+        {BASES.map((item, index) => {
+          const activeCard = activeBase === index;
+          return (
+            <TouchableOpacity
+              key={item.name}
+              style={[
+                styles.baseCard,
+                activeCard
+                  ? { backgroundColor: withAlpha(ACCENT, '18'), borderColor: withAlpha(ACCENT, '42') }
+                  : { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+              onPress={() => {
+                if (decimalValue != null) {
+                  const nextValue = decimalValue.toString(item.radix);
+                  setInputVal(item.radix === 16 ? nextValue.toUpperCase() : nextValue);
+                } else {
+                  setInputVal('');
+                }
+                setActiveBase(index);
+              }}
+            >
+              <Text style={[styles.baseName, { color: colors.text }]}>{item.name}</Text>
+              <Text style={[styles.baseNote, { color: activeCard ? ACCENT : colors.textMuted }]}>{item.note}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
-      {/* Input */}
       <View style={[styles.inputCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Enter {BASES[activeBase].name}</Text>
-        <View style={styles.inputRow}>
-          {BASES[activeBase].prefix ? (
-            <Text style={[styles.prefix, { color: ACCENT }]}>{BASES[activeBase].prefix}</Text>
-          ) : null}
+        <View style={styles.inputHeader}>
+          <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Input Value</Text>
+          <Text style={[styles.inputHint, { color: ACCENT }]}>Base {active.radix}</Text>
+        </View>
+        <View style={[styles.inputRow, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+          {active.prefix ? <Text style={[styles.prefix, { color: ACCENT }]}>{active.prefix}</Text> : null}
           <TextInput
             style={[styles.input, { color: colors.text }]}
             value={inputVal}
             onChangeText={handleInput}
-            placeholder={BASES[activeBase].placeholder}
+            placeholder={active.placeholder}
             placeholderTextColor={colors.textMuted}
             autoCapitalize="characters"
             autoCorrect={false}
           />
-          {inputVal.length > 0 && (
+          {inputVal.length > 0 ? (
             <TouchableOpacity onPress={() => setInputVal('')}>
-              <Ionicons name="close-circle" size={20} color={colors.textMuted} />
+              <Ionicons name="close-circle" size={18} color={colors.textMuted} />
             </TouchableOpacity>
-          )}
+          ) : null}
         </View>
       </View>
 
-      {/* Results */}
-      {BASES.map((b, i) => (
-        <View key={b.name} style={[styles.resultCard, { backgroundColor: colors.card, borderColor: colors.border }, i === activeBase && { borderLeftColor: ACCENT, borderLeftWidth: 3 }]}>
-          <View style={styles.resultHeader}>
-            <Text style={[styles.resultName, { color: colors.textMuted }]}>{b.name}</Text>
-            <TouchableOpacity onPress={() => copyValue(conversions[i])} disabled={!conversions[i]}>
-              <Ionicons name="copy-outline" size={16} color={conversions[i] ? ACCENT : colors.border} />
-            </TouchableOpacity>
-          </View>
-          <Text style={[styles.resultValue, { color: conversions[i] ? colors.text : colors.border }]}>
-            {b.prefix}{conversions[i] || '—'}
-          </Text>
-        </View>
-      ))}
+      <View style={styles.resultsGrid}>
+        {BASES.map((item, index) => {
+          const value = conversions[index];
+          const displayValue = item.radix === 2 ? formatBinaryGroups(value) : value;
+          const isActive = activeBase === index;
 
-      {/* Bit info */}
-      {bitInfo && (
-        <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={styles.infoTitle}>Bit Analysis</Text>
-          <View style={styles.infoGrid}>
-            {[
-              { label: 'Bits', val: String(bitInfo.bits) },
-              { label: '1s', val: String(bitInfo.ones) },
-              { label: '0s', val: String(bitInfo.zeros) },
-              { label: 'Power of 2', val: bitInfo.isPowerOf2 ? 'Yes' : 'No' },
-              { label: 'Even', val: bitInfo.isEven ? 'Yes' : 'No' },
-            ].map(item => (
-              <View key={item.label} style={styles.infoItem}>
-                <Text style={[styles.infoVal, { color: ACCENT }]}>{item.val}</Text>
-                <Text style={[styles.infoLabel, { color: colors.textMuted }]}>{item.label}</Text>
+          return (
+            <View
+              key={item.name}
+              style={[
+                styles.resultCard,
+                isActive
+                  ? { backgroundColor: withAlpha(ACCENT, '12'), borderColor: withAlpha(ACCENT, '3A') }
+                  : { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <View style={styles.resultHeader}>
+                <View>
+                  <Text style={[styles.resultName, { color: colors.text }]}>{item.name}</Text>
+                  <Text style={[styles.resultMeta, { color: colors.textMuted }]}>
+                    {item.prefix || 'base'} {item.radix}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => copyValue(item.name, value)} disabled={!value}>
+                  <Ionicons
+                    name={copiedLabel === item.name ? 'checkmark-circle' : 'copy-outline'}
+                    size={18}
+                    color={value ? ACCENT : colors.borderStrong}
+                  />
+                </TouchableOpacity>
               </View>
-            ))}
-          </View>
-        </View>
-      )}
+              <Text style={[styles.resultValue, { color: value ? colors.text : colors.borderStrong }]}>
+                {value ? `${item.prefix}${displayValue}` : '--'}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+
+      <View style={[styles.analysisCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Bit Analysis</Text>
+        {bitInfo ? (
+          <>
+            <View style={styles.metricRow}>
+              {[
+                { label: 'Bits', value: String(bitInfo.bitLength) },
+                { label: '1s', value: String(bitInfo.ones) },
+                { label: '0s', value: String(bitInfo.zeros) },
+              ].map((item) => (
+                <View key={item.label} style={[styles.metricCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <Text style={[styles.metricValue, { color: ACCENT }]}>{item.value}</Text>
+                  <Text style={[styles.metricLabel, { color: colors.textMuted }]}>{item.label}</Text>
+                </View>
+              ))}
+            </View>
+
+            <View style={styles.factRow}>
+              <View style={[styles.factPill, { backgroundColor: withAlpha(ACCENT, '14'), borderColor: withAlpha(ACCENT, '2E') }]}>
+                <Ionicons name="flash-outline" size={15} color={ACCENT} />
+                <Text style={[styles.factText, { color: colors.text }]}>
+                  {bitInfo.isPowerOf2 ? 'Power of 2' : 'Not a power of 2'}
+                </Text>
+              </View>
+              <View style={[styles.factPill, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Ionicons name="resize-outline" size={15} color={colors.textMuted} />
+                <Text style={[styles.factText, { color: colors.text }]}>
+                  {bitInfo.isEven ? 'Even value' : 'Odd value'}
+                </Text>
+              </View>
+              {bitInfo.ascii ? (
+                <View style={[styles.factPill, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <Ionicons name="text-outline" size={15} color={colors.textMuted} />
+                  <Text style={[styles.factText, { color: colors.text }]}>ASCII {bitInfo.ascii}</Text>
+                </View>
+              ) : null}
+            </View>
+          </>
+        ) : (
+          <Text style={[styles.analysisCopy, { color: colors.textMuted }]}>
+            Enter a valid non-negative number to inspect bit length, parity, and ASCII preview.
+          </Text>
+        )}
+      </View>
     </ScreenShell>
   );
 }
 
-const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
+const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
   StyleSheet.create({
-    baseRow: { flexDirection: 'row', gap: 6, marginBottom: Spacing.lg, flexWrap: 'wrap' },
-    baseBtn: { flex: 1, minWidth: 70, paddingVertical: 8, borderRadius: Radii.md, borderWidth: 1.5, borderColor: c.border, alignItems: 'center' },
-    baseBtnText: { fontSize: 11, fontFamily: Fonts.semibold },
-    inputCard: { borderRadius: Radii.lg, borderWidth: 1, padding: Spacing.lg, marginBottom: Spacing.lg },
-    inputLabel: { fontSize: 11, fontFamily: Fonts.bold, textTransform: 'uppercase', letterSpacing: 1, marginBottom: Spacing.sm },
-    inputRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    prefix: { fontSize: 18, fontFamily: Fonts.bold },
-    input: { flex: 1, fontSize: 24, fontFamily: Fonts.bold, padding: 0 },
-    resultCard: { borderRadius: Radii.lg, borderWidth: 1, padding: Spacing.md, marginBottom: Spacing.sm },
-    resultHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-    resultName: { fontSize: 11, fontFamily: Fonts.bold, textTransform: 'uppercase', letterSpacing: 1 },
-    resultValue: { fontSize: 18, fontFamily: Fonts.bold },
-    infoCard: { borderRadius: Radii.lg, borderWidth: 1, padding: Spacing.lg, marginTop: Spacing.sm },
-    infoTitle: { fontSize: 11, fontFamily: Fonts.bold, color: c.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: Spacing.md },
-    infoGrid: { flexDirection: 'row', justifyContent: 'space-around' },
-    infoItem: { alignItems: 'center' },
-    infoVal: { fontSize: 18, fontFamily: Fonts.bold },
-    infoLabel: { fontSize: 10, fontFamily: Fonts.medium, marginTop: 2 },
+    heroCard: {
+      borderRadius: Radii.xl,
+      padding: Spacing.xl,
+      gap: Spacing.sm,
+    },
+    heroEyebrow: {
+      fontSize: 12,
+      fontFamily: Fonts.semibold,
+      color: '#EDE9FE',
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+    },
+    heroTitle: {
+      fontSize: 38,
+      lineHeight: 42,
+      fontFamily: Fonts.bold,
+      color: '#FFFFFF',
+    },
+    heroCopy: {
+      fontSize: 14,
+      lineHeight: 20,
+      fontFamily: Fonts.medium,
+      color: '#F5F3FF',
+    },
+    baseGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: Spacing.md,
+    },
+    baseCard: {
+      flexGrow: 1,
+      minWidth: 150,
+      borderWidth: 1,
+      borderRadius: Radii.xl,
+      padding: Spacing.lg,
+      gap: Spacing.xs,
+    },
+    baseName: {
+      fontSize: 16,
+      fontFamily: Fonts.semibold,
+    },
+    baseNote: {
+      fontSize: 13,
+      lineHeight: 18,
+      fontFamily: Fonts.medium,
+    },
+    inputCard: {
+      borderWidth: 1,
+      borderRadius: Radii.xl,
+      padding: Spacing.lg,
+      gap: Spacing.sm,
+    },
+    inputHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    sectionTitle: {
+      fontSize: 12,
+      fontFamily: Fonts.semibold,
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+    },
+    inputHint: {
+      fontSize: 13,
+      fontFamily: Fonts.bold,
+    },
+    inputRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Spacing.sm,
+      borderWidth: 1,
+      borderRadius: Radii.xl,
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.md,
+    },
+    prefix: {
+      fontSize: 22,
+      fontFamily: Fonts.bold,
+    },
+    input: {
+      flex: 1,
+      fontSize: 28,
+      fontFamily: Fonts.bold,
+      padding: 0,
+    },
+    resultsGrid: {
+      gap: Spacing.md,
+    },
+    resultCard: {
+      borderWidth: 1,
+      borderRadius: Radii.xl,
+      padding: Spacing.lg,
+      gap: Spacing.md,
+    },
+    resultHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: Spacing.md,
+    },
+    resultName: {
+      fontSize: 16,
+      fontFamily: Fonts.semibold,
+    },
+    resultMeta: {
+      fontSize: 12,
+      fontFamily: Fonts.medium,
+      marginTop: 2,
+    },
+    resultValue: {
+      fontSize: 24,
+      lineHeight: 30,
+      fontFamily: Fonts.bold,
+    },
+    analysisCard: {
+      borderWidth: 1,
+      borderRadius: Radii.xl,
+      padding: Spacing.lg,
+      gap: Spacing.md,
+    },
+    metricRow: {
+      flexDirection: 'row',
+      gap: Spacing.sm,
+    },
+    metricCard: {
+      flex: 1,
+      borderWidth: 1,
+      borderRadius: Radii.lg,
+      paddingVertical: Spacing.md,
+      paddingHorizontal: Spacing.sm,
+      alignItems: 'center',
+      gap: 4,
+    },
+    metricValue: {
+      fontSize: 22,
+      fontFamily: Fonts.bold,
+    },
+    metricLabel: {
+      fontSize: 11,
+      fontFamily: Fonts.semibold,
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+    },
+    factRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: Spacing.sm,
+    },
+    factPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      borderWidth: 1,
+      borderRadius: Radii.pill,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: 9,
+    },
+    factText: {
+      fontSize: 13,
+      fontFamily: Fonts.medium,
+    },
+    analysisCopy: {
+      fontSize: 14,
+      lineHeight: 20,
+      fontFamily: Fonts.medium,
+    },
   });

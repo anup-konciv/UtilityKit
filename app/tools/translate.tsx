@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '@/components/ThemeProvider';
 import ScreenShell from '@/components/ScreenShell';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
+import { translateText, type TranslationProvider } from '@/lib/translate-service';
 
 const ACCENT = '#D946EF';
 
@@ -193,6 +194,7 @@ export default function TranslateScreen() {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [pickerFor, setPickerFor] = useState<'source' | 'target' | null>(null);
+  const [provider, setProvider] = useState<TranslationProvider | null>(null);
 
   const swapLangs = useCallback(() => {
     setSourceLang(targetLang);
@@ -200,6 +202,7 @@ export default function TranslateScreen() {
     setInputText(result);
     setResult(inputText);
     setError('');
+    setProvider(null);
   }, [sourceLang, targetLang, inputText, result]);
 
   const translate = useCallback(async () => {
@@ -209,16 +212,16 @@ export default function TranslateScreen() {
     setError('');
     setResult('');
     try {
-      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLang.code}|${targetLang.code}`;
-      const res = await fetch(url);
-      const json = await res.json();
-      if (json.responseStatus === 200) {
-        setResult(json.responseData.translatedText);
-      } else {
-        setError(json.responseDetails ?? 'Translation failed. Please try again.');
-      }
-    } catch {
-      setError('Network error. Please check your connection.');
+      const translated = await translateText(text, sourceLang.code, targetLang.code);
+      setResult(translated.text);
+      setProvider(translated.provider);
+    } catch (translationError) {
+      setProvider(null);
+      setError(
+        translationError instanceof Error
+          ? translationError.message
+          : 'Network error. Please check your connection.',
+      );
     } finally {
       setLoading(false);
     }
@@ -270,7 +273,7 @@ export default function TranslateScreen() {
           placeholder={`Enter text in ${sourceLang.name}...`}
           placeholderTextColor={colors.textMuted}
           value={inputText}
-          onChangeText={v => { setInputText(v); setError(''); }}
+          onChangeText={v => { setInputText(v); setError(''); setProvider(null); }}
           multiline
           maxLength={500}
           textAlignVertical="top"
@@ -279,13 +282,20 @@ export default function TranslateScreen() {
           <Text style={[styles.charCount, { color: colors.textMuted }]}>{charCount}/500</Text>
           {inputText.length > 0 && (
             <TouchableOpacity
-              onPress={() => { setInputText(''); setResult(''); setError(''); }}
+              onPress={() => { setInputText(''); setResult(''); setError(''); setProvider(null); }}
               style={styles.clearBtn}
             >
               <Ionicons name="close-circle" size={18} color={colors.textMuted} />
             </TouchableOpacity>
           )}
         </View>
+      </View>
+
+      <View style={[styles.providerNote, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Ionicons name="shield-checkmark-outline" size={16} color={ACCENT} />
+        <Text style={[styles.providerNoteText, { color: colors.textMuted }]}>
+          Primary source: LibreTranslate-compatible API. Fallback: MyMemory only if the primary provider fails.
+        </Text>
       </View>
 
       {/* Translate Button */}
@@ -327,8 +337,15 @@ export default function TranslateScreen() {
       {!!result && (
         <View style={[styles.resultCard, { backgroundColor: ACCENT + '0D', borderColor: ACCENT + '40' }]}>
           <View style={styles.resultHeader}>
-            <View style={[styles.resultLangBadge, { backgroundColor: ACCENT + '20' }]}>
-              <Text style={[styles.resultLangText, { color: ACCENT }]}>{targetLang.name}</Text>
+            <View style={styles.resultHeaderLeft}>
+              <View style={[styles.resultLangBadge, { backgroundColor: ACCENT + '20' }]}>
+                <Text style={[styles.resultLangText, { color: ACCENT }]}>{targetLang.name}</Text>
+              </View>
+              {provider ? (
+                <View style={[styles.providerBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <Text style={[styles.providerBadgeText, { color: colors.textMuted }]}>{provider}</Text>
+                </View>
+              ) : null}
             </View>
             <TouchableOpacity style={styles.copyBtn} onPress={copyResult}>
               <Ionicons
@@ -412,6 +429,22 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
     },
     charCount: { fontSize: 12, fontFamily: Fonts.regular },
     clearBtn: { padding: 2 },
+    providerNote: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderWidth: 1,
+      borderRadius: Radii.lg,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: 10,
+      marginBottom: Spacing.md,
+    },
+    providerNoteText: {
+      flex: 1,
+      fontSize: 12,
+      lineHeight: 18,
+      fontFamily: Fonts.medium,
+    },
     translateBtn: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -442,13 +475,25 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       alignItems: 'center',
       justifyContent: 'space-between',
       marginBottom: Spacing.sm,
+      gap: Spacing.sm,
     },
+    resultHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, flexWrap: 'wrap' },
     resultLangBadge: {
       paddingHorizontal: 10,
       paddingVertical: 3,
       borderRadius: Radii.pill,
     },
     resultLangText: { fontSize: 12, fontFamily: Fonts.bold, textTransform: 'uppercase', letterSpacing: 0.5 },
+    providerBadge: {
+      borderWidth: 1,
+      borderRadius: Radii.pill,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+    },
+    providerBadgeText: {
+      fontSize: 11,
+      fontFamily: Fonts.semibold,
+    },
     copyBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     copyText: { fontSize: 13, fontFamily: Fonts.semibold },
     resultText: { fontSize: 16, fontFamily: Fonts.regular, lineHeight: 26 },

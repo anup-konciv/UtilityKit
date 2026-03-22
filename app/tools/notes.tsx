@@ -10,6 +10,7 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -153,6 +154,7 @@ function NoteEditor({
   const [pin, setPin] = useState(initial.pin);
   const [showColors, setShowColors] = useState(false);
   const [showLock, setShowLock] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const dark = isDark(color);
   const textColor = dark ? '#F1F5F9' : '#0B1120';
@@ -161,19 +163,54 @@ function NoteEditor({
   const borderAlpha = dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
   const btnBg = dark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.07)';
 
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   const toggleLock = () => { if (locked) { setLocked(false); setPin(''); } else setLocked(true); };
   const canSave = !locked || pin.length === 4;
   const handleSave = () => {
     if (!canSave) return;
     onSave({ ...initial, title: title.trim(), content, color, locked, pin, updatedAt: Date.now() });
   };
-  const openColors = () => { setShowLock(false); setShowColors(true); };
-  const openLock = () => { setShowColors(false); setShowLock(true); };
+  const openColors = () => {
+    Keyboard.dismiss();
+    setShowLock(false);
+    setShowColors(true);
+  };
+  const openLock = () => {
+    Keyboard.dismiss();
+    setShowColors(false);
+    setShowLock(true);
+  };
+  const androidKeyboardLift = Platform.OS === 'android' && keyboardHeight > 0 ? { marginBottom: keyboardHeight } : null;
+  const popupKeyboardLift = keyboardHeight > 0 ? { marginBottom: keyboardHeight } : null;
+  const androidLockOverlayLift =
+    Platform.OS === 'android' && keyboardHeight > 0
+      ? { paddingBottom: keyboardHeight }
+      : null;
 
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={[es.root, { backgroundColor: color }]} edges={['top', 'bottom']}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
+        >
 
           {/* Header */}
           <View style={[es.header, { backgroundColor: color, borderBottomColor: borderAlpha }]}>
@@ -215,7 +252,7 @@ function NoteEditor({
           </View>
 
           {/* Bottom toolbar */}
-          <View style={[es.toolbar, { backgroundColor: color, borderTopColor: borderAlpha }]}>
+          <View style={[es.toolbar, { backgroundColor: color, borderTopColor: borderAlpha }, androidKeyboardLift]}>
             <TouchableOpacity style={es.toolBtn} onPress={openColors}>
               <View style={[es.colorDot, { backgroundColor: color, borderColor: borderAlpha }]} />
               <Text style={[es.toolLabel, { color: mutedColor }]}>Color</Text>
@@ -243,7 +280,7 @@ function NoteEditor({
         {/* Color picker popup */}
         {showColors && (
           <Pressable style={es.popupBackdrop} onPress={() => setShowColors(false)}>
-            <Pressable style={[es.popup, { backgroundColor: colors.card }]} onPress={() => {}}>
+            <Pressable style={[es.popup, { backgroundColor: colors.card }, popupKeyboardLift]} onPress={() => {}}>
               <View style={[es.popupHandle, { backgroundColor: colors.border }]} />
               <Text style={[es.popupTitle, { color: colors.text }]}>Note Color</Text>
 
@@ -278,45 +315,62 @@ function NoteEditor({
 
         {/* Lock popup */}
         {showLock && (
-          <Pressable style={es.popupBackdrop} onPress={() => setShowLock(false)}>
-            <Pressable style={[es.popup, { backgroundColor: colors.card }]} onPress={() => {}}>
-              <View style={[es.popupHandle, { backgroundColor: colors.border }]} />
-              <Text style={[es.popupTitle, { color: colors.text }]}>Lock Note</Text>
-              <View style={[es.lockRow, { borderBottomColor: 'rgba(0,0,0,0.07)' }]}>
-                <Ionicons name={locked ? 'lock-closed' : 'lock-open-outline'} size={18} color={locked ? '#F59E0B' : '#64748B'} />
-                <Text style={[es.lockLabel, { color: colors.text }]}>Lock with PIN</Text>
-                <TouchableOpacity style={[es.toggle, locked && es.toggleOn]} onPress={toggleLock}>
-                  <View style={[es.thumb, locked && es.thumbOn]} />
-                </TouchableOpacity>
-              </View>
-              {locked && (
-                <View style={es.pinSection}>
-                  <Text style={es.pinLabel}>4-digit PIN</Text>
-                  <TextInput
-                    style={[es.pinInput, { color: colors.text, borderColor: pin.length === 4 ? '#10B981' : colors.border }]}
-                    value={pin}
-                    onChangeText={(t) => setPin(t.replace(/\D/g, '').slice(0, 4))}
-                    placeholder="_ _ _ _"
-                    placeholderTextColor="#94A3B8"
-                    keyboardType="number-pad"
-                    secureTextEntry
-                    maxLength={4}
-                    autoFocus
-                  />
-                  {pin.length > 0 && pin.length < 4 && (
-                    <Text style={es.pinHint}>Enter all 4 digits</Text>
-                  )}
-                </View>
-              )}
-              <TouchableOpacity
-                style={[es.doneBtn, (!locked || pin.length === 4) ? es.doneBtnActive : es.doneBtnDisabled]}
-                onPress={() => setShowLock(false)}
-                disabled={locked && pin.length < 4}
+          <KeyboardAvoidingView
+            style={es.popupKeyboardWrap}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
+          >
+            <Pressable
+              style={[es.popupBackdrop, androidLockOverlayLift]}
+              onPress={() => setShowLock(false)}
+            >
+              <Pressable
+                style={[
+                  es.popup,
+                  es.lockPopup,
+                  { backgroundColor: colors.card },
+                  popupKeyboardLift,
+                ]}
+                onPress={() => {}}
               >
-                <Text style={es.doneBtnText}>Done</Text>
-              </TouchableOpacity>
+                <View style={[es.popupHandle, { backgroundColor: colors.border }]} />
+                <Text style={[es.popupTitle, { color: colors.text }]}>Lock Note</Text>
+                <View style={[es.lockRow, { borderBottomColor: 'rgba(0,0,0,0.07)' }]}>
+                  <Ionicons name={locked ? 'lock-closed' : 'lock-open-outline'} size={18} color={locked ? '#F59E0B' : '#64748B'} />
+                  <Text style={[es.lockLabel, { color: colors.text }]}>Lock with PIN</Text>
+                  <TouchableOpacity style={[es.toggle, locked && es.toggleOn]} onPress={toggleLock}>
+                    <View style={[es.thumb, locked && es.thumbOn]} />
+                  </TouchableOpacity>
+                </View>
+                {locked && (
+                  <View style={es.pinSection}>
+                    <Text style={es.pinLabel}>4-digit PIN</Text>
+                    <TextInput
+                      style={[es.pinInput, { color: colors.text, borderColor: pin.length === 4 ? '#10B981' : colors.border }]}
+                      value={pin}
+                      onChangeText={(t) => setPin(t.replace(/\D/g, '').slice(0, 4))}
+                      placeholder="_ _ _ _"
+                      placeholderTextColor="#94A3B8"
+                      keyboardType="number-pad"
+                      secureTextEntry
+                      maxLength={4}
+                      autoFocus
+                    />
+                    {pin.length > 0 && pin.length < 4 && (
+                      <Text style={es.pinHint}>Enter all 4 digits</Text>
+                    )}
+                  </View>
+                )}
+                <TouchableOpacity
+                  style={[es.doneBtn, (!locked || pin.length === 4) ? es.doneBtnActive : es.doneBtnDisabled]}
+                  onPress={() => setShowLock(false)}
+                  disabled={locked && pin.length < 4}
+                >
+                  <Text style={es.doneBtnText}>Done</Text>
+                </TouchableOpacity>
+              </Pressable>
             </Pressable>
-          </Pressable>
+          </KeyboardAvoidingView>
         )}
       </SafeAreaView>
     </Modal>
@@ -347,11 +401,15 @@ const es = StyleSheet.create({
     paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm,
     borderTopWidth: 1, gap: Spacing.sm,
   },
+  popupKeyboardWrap: {
+    ...StyleSheet.absoluteFillObject,
+  },
   toolBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 8, paddingHorizontal: 6 },
   colorDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5 },
   toolLabel: { fontFamily: Fonts.medium, fontSize: 13 },
   popupBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
   popup: { borderTopLeftRadius: Radii.xl, borderTopRightRadius: Radii.xl, paddingHorizontal: Spacing.lg, paddingBottom: Spacing.xl, paddingTop: Spacing.sm },
+  lockPopup: { paddingBottom: Spacing.lg },
   popupHandle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: Spacing.md },
   popupTitle: { fontFamily: Fonts.bold, fontSize: 16, marginBottom: Spacing.sm },
   colorSectionLabel: { fontFamily: Fonts.semibold, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: Spacing.sm },
