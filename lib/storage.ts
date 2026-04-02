@@ -45,6 +45,14 @@ export const KEYS = {
   driverTracker: 'uk_driver_tracker',
   newspaperTracker: 'uk_newspaper_tracker',
   officeBoyTracker: 'uk_office_boy_tracker',
+  travelTracker: 'uk_travel_tracker',
+  routines: 'uk_routines',
+  routineLogs: 'uk_routine_logs',
+  assignments: 'uk_assignments',
+  babyCare: 'uk_baby_care',
+  babyProfile: 'uk_baby_profile',
+  houseBills: 'uk_house_bills',
+  electricityBills: 'uk_electricity_bills',
 } as const;
 
 export async function loadJSON<T>(key: string, fallback: T): Promise<T> {

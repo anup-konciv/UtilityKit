@@ -704,7 +704,7 @@ export default function BirthdayTrackerScreen() {
 
             {formPreview ? (
               <LinearGradient
-                colors={[formPreview.palette.soft, withAlpha(formPreview.palette.primary, '16')]}
+                colors={[withAlpha(formPreview.palette.primary, '14'), withAlpha(formPreview.palette.primary, '06')]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.previewCard}
@@ -750,7 +750,6 @@ export default function BirthdayTrackerScreen() {
 const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
   StyleSheet.create({
     listContent: {
-      padding: Spacing.md,
       paddingBottom: Spacing.huge,
     },
     listHeader: {
@@ -825,7 +824,7 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
     },
     searchInput: {
       flex: 1,
-      fontSize: 15,
+      fontSize: 14,
       fontFamily: Fonts.regular,
       paddingVertical: 10,
     },

@@ -47,8 +47,8 @@ type ListItem =
   | { type: 'empty'; title: string; message: string };
 
 const ACCENT = '#F97360';
-const ACCENT_DEEP = '#0F766E';
-const ACCENT_SOFT = '#FFF4EF';
+const ACCENT_DEEP = '#C2410C';
+const ACCENT_SOFT = 'rgba(249, 115, 96, 0.08)';
 
 const PRIORITY_META: Record<
   Priority,
@@ -65,21 +65,21 @@ const PRIORITY_META: Record<
     icon: 'flame-outline',
     color: '#FB7185',
     tone: '#9F1239',
-    bg: '#FFF1F2',
+    bg: 'rgba(251, 113, 133, 0.12)',
   },
   medium: {
     label: 'Medium',
     icon: 'flash-outline',
     color: '#F59E0B',
     tone: '#92400E',
-    bg: '#FFFBEB',
+    bg: 'rgba(245, 158, 11, 0.12)',
   },
   low: {
     label: 'Low',
     icon: 'leaf-outline',
     color: '#14B8A6',
     tone: '#0F766E',
-    bg: '#F0FDFA',
+    bg: 'rgba(20, 184, 166, 0.12)',
   },
 };
 
@@ -406,7 +406,7 @@ export default function TodoManagerScreen() {
   const header = (
     <View style={styles.headerStack}>
       <LinearGradient
-        colors={['#0F172A', '#155E75', '#F97360']}
+        colors={['#1C1917', '#C2410C', '#FB923C']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.heroCard}
@@ -813,8 +813,8 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       letterSpacing: 1,
     },
     heroTitle: {
-      fontSize: 30,
-      lineHeight: 36,
+      fontSize: 28,
+      lineHeight: 34,
       fontFamily: Fonts.bold,
       color: '#FFFFFF',
     },
@@ -822,7 +822,7 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       fontSize: 14,
       lineHeight: 20,
       fontFamily: Fonts.medium,
-      color: '#E0F2FE',
+      color: '#FFEDD5',
     },
     heroStatsRow: {
       flexDirection: 'row',
@@ -847,7 +847,7 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
     heroStatLabel: {
       fontSize: 11,
       fontFamily: Fonts.semibold,
-      color: '#E0F2FE',
+      color: '#FFEDD5',
       textTransform: 'uppercase',
       letterSpacing: 0.8,
     },
