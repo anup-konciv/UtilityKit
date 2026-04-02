@@ -53,6 +53,7 @@ export const KEYS = {
   babyProfile: 'uk_baby_profile',
   houseBills: 'uk_house_bills',
   electricityBills: 'uk_electricity_bills',
+  groceryItems: 'uk_grocery_items',
 } as const;
 
 export async function loadJSON<T>(key: string, fallback: T): Promise<T> {

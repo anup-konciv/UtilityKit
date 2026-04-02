@@ -603,4 +603,13 @@ export const TOOLS: ToolMeta[] = [
     accent: '#F59E0B',
     badge: 'Finance',
   },
+  {
+    id: 'grocery-list',
+    label: 'Grocery List',
+    description: 'Categorized shopping with favorites',
+    icon: 'cart-outline',
+    route: '/tools/grocery-list',
+    accent: '#059669',
+    badge: 'Life',
+  },
 ];
