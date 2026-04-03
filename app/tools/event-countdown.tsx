@@ -99,7 +99,7 @@ export default function EventCountdownScreen() {
           const rem = getRemaining(event.date);
           const progress = rem.passed ? 1 : Math.max(0, 1 - (rem.total / (365 * 86400000)));
           return (
-            <View key={event.id} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: event.color }]}>
+            <View key={event.id} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <TouchableOpacity style={styles.deleteBtn} onPress={() => removeEvent(event.id)}>
                 <Ionicons name="close-circle" size={20} color={colors.textMuted} />
               </TouchableOpacity>
@@ -187,7 +187,7 @@ const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
   StyleSheet.create({
     empty: { alignItems: 'center', paddingVertical: 60, gap: Spacing.md },
     emptyText: { fontSize: 14, fontFamily: Fonts.regular, textAlign: 'center' },
-    card: { borderRadius: Radii.xl, borderWidth: 1, borderLeftWidth: 4, padding: Spacing.lg, marginBottom: Spacing.md, position: 'relative' },
+    card: { borderRadius: Radii.xl, borderWidth: 1, padding: Spacing.lg, marginBottom: Spacing.md, position: 'relative', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4 },
     deleteBtn: { position: 'absolute', top: Spacing.sm, right: Spacing.sm, zIndex: 1 },
     eventTitle: { fontSize: 18, fontFamily: Fonts.bold, marginBottom: 4 },
     eventDate: { fontSize: 12, fontFamily: Fonts.regular, marginBottom: Spacing.md },

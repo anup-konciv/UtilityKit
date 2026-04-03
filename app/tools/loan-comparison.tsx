@@ -77,7 +77,7 @@ export default function LoanComparisonScreen() {
     <ScreenShell title="Loan Compare" accentColor={ACCENT}>
       {/* Loan Input Cards */}
       {loans.map((loan, idx) => (
-        <View key={loan.id} style={[styles.loanCard, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: loan.color }]}>
+        <View key={loan.id} style={[styles.loanCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.loanHeader}>
             <View style={[styles.loanBadge, { backgroundColor: loan.color + '20' }]}>
               <Text style={[styles.loanBadgeText, { color: loan.color }]}>{loan.label}</Text>
@@ -244,7 +244,7 @@ export default function LoanComparisonScreen() {
 
 const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
   StyleSheet.create({
-    loanCard: { borderRadius: Radii.lg, borderWidth: 1, borderLeftWidth: 4, padding: Spacing.lg, marginBottom: Spacing.md },
+    loanCard: { borderRadius: Radii.lg, borderWidth: 1, padding: Spacing.lg, marginBottom: Spacing.md, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4 },
     loanHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
     loanBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: Radii.pill },
     loanBadgeText: { fontSize: 13, fontFamily: Fonts.bold },

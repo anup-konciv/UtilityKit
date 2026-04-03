@@ -150,7 +150,7 @@ export default function FlashcardsScreen() {
           decks.map(deck => (
             <TouchableOpacity
               key={deck.id}
-              style={[styles.deckCard, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: deck.color }]}
+              style={[styles.deckCard, { backgroundColor: colors.card, borderColor: colors.border }]}
               onPress={() => { setActiveDeck(deck); setCardIdx(0); setFlipped(false); flipAnim.setValue(0); }}
             >
               <View style={[styles.deckIcon, { backgroundColor: deck.color + '20' }]}>
@@ -321,7 +321,7 @@ const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
     emptyText: { fontSize: 14, fontFamily: Fonts.regular, textAlign: 'center' },
     deckCard: {
       flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-      padding: Spacing.lg, borderRadius: Radii.lg, borderWidth: 1, borderLeftWidth: 4, marginBottom: Spacing.sm,
+      padding: Spacing.lg, borderRadius: Radii.lg, borderWidth: 1, marginBottom: Spacing.sm, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4,
     },
     deckIcon: { width: 48, height: 48, borderRadius: Radii.md, alignItems: 'center', justifyContent: 'center' },
     deckName: { fontSize: 16, fontFamily: Fonts.semibold },

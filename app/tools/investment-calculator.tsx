@@ -526,7 +526,7 @@ function CompareTab({ colors }: { colors: Colors }) {
       {results && (
         <View style={{ marginTop: Spacing.lg, gap: 12 }}>
           {results.map((r, i) => (
-            <View key={r.rate} style={[ts.scenCard, { backgroundColor: colors.surface, borderColor: SCENARIO_COLORS[i] + '50', borderLeftColor: SCENARIO_COLORS[i], borderLeftWidth: 4 }]}>
+            <View key={r.rate} style={[ts.scenCard, { backgroundColor: colors.surface, borderColor: SCENARIO_COLORS[i] + '50' }]}>
               <View style={ts.scenHeader}>
                 <Text style={[ts.scenName, { color: SCENARIO_COLORS[i] }]}>{SCENARIO_LABELS[i]} · {r.rate}% p.a.</Text>
                 <Text style={[ts.scenMaturity, { color: colors.text }]}>{fmtINR(r.result.maturity)}</Text>

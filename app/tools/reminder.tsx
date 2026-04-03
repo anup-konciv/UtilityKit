@@ -399,7 +399,7 @@ function ReminderCard({ item, onPress, onToggleDone, colors }: {
 
   return (
     <TouchableOpacity
-      style={[rc.card, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: item.done ? colors.border : priColor }]}
+      style={[rc.card, { backgroundColor: colors.card, borderColor: colors.border }]}
       onPress={onPress}
       activeOpacity={0.8}
     >
@@ -442,7 +442,7 @@ function ReminderCard({ item, onPress, onToggleDone, colors }: {
 }
 
 const rc = StyleSheet.create({
-  card:      { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.md, borderRadius: Radii.lg, borderWidth: 1, borderLeftWidth: 4, marginBottom: Spacing.sm },
+  card:      { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.md, borderRadius: Radii.lg, borderWidth: 1, marginBottom: Spacing.sm, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4 },
   check:     { width: 26, height: 26, borderRadius: 13, borderWidth: 2, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   title:     { fontFamily: Fonts.semibold, fontSize: 15, marginBottom: 2 },
   titleDone: { textDecorationLine: 'line-through' } as any,

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  ScrollView, StyleSheet, Modal, Alert, Dimensions, Share,
+  ScrollView, StyleSheet, Modal, Alert, Dimensions,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
@@ -92,6 +92,11 @@ function last6Months(): string[] {
   }
   return res;
 }
+function daysInMonth(ym: string): number {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(y, m, 0).getDate();
+}
+
 let _curSym = '₹';
 function setCurSym(s: string) { _curSym = s; }
 function fmtINR(n: number) {
@@ -118,12 +123,13 @@ function expensesToCSV(expenses: Expense[]): string {
 }
 
 // ── Add / Edit Sheet ──────────────────────────────────────────────────────────
-function AddExpenseSheet({ initial, onSave, onDelete, onClose, colors }: {
+function AddExpenseSheet({ initial, onSave, onDelete, onClose, colors, currencySymbol }: {
   initial: Expense | null;
   onSave: (e: Expense) => void;
   onDelete?: (id: string) => void;
   onClose: () => void;
   colors: Colors;
+  currencySymbol: string;
 }) {
   const isEdit = initial !== null;
   const [amount,    setAmount]    = useState(initial ? String(initial.amount) : '');
@@ -162,7 +168,8 @@ function AddExpenseSheet({ initial, onSave, onDelete, onClose, colors }: {
 
           {/* Amount */}
           <View style={[s.amountWrap, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-            <Text style={[s.rupee, { color: ACCENT }]}>₹</Text>
+            {/* FIX #1: Use selected currencySymbol instead of hardcoded ₹ */}
+            <Text style={[s.rupee, { color: ACCENT }]}>{currencySymbol}</Text>
             <TextInput
               style={[s.amountInput, { color: colors.text }]}
               value={amount}
@@ -323,20 +330,37 @@ const mn = StyleSheet.create({
 });
 
 // ── Overview Tab ──────────────────────────────────────────────────────────────
-function OverviewTab({ expenses, budget, onSetBudget, onAdd, onEdit, colors }: {
+function OverviewTab({ expenses, budget, onSetBudget, onAdd, onEdit, onRepeat, colors }: {
   expenses: Expense[]; budget: number;
   onSetBudget: () => void; onAdd: () => void;
-  onEdit: (e: Expense) => void; colors: Colors;
+  onEdit: (e: Expense) => void;
+  onRepeat: (e: Expense) => void;
+  colors: Colors;
 }) {
   const month = currentMonthKey();
   const monthExpenses = expenses.filter(e => e.date.startsWith(month));
   const total = monthExpenses.reduce((s, e) => s + e.amount, 0);
   const count = monthExpenses.length;
-  const daysInMonth = new Date(parseInt(month.split('-')[0]), parseInt(month.split('-')[1]), 0).getDate();
-  const dayOfMonth  = new Date().getDate();
-  const dailyAvg    = dayOfMonth > 0 ? total / dayOfMonth : 0;
-  const progress    = budget > 0 ? Math.min(total / budget, 1) : 0;
-  const overBudget  = budget > 0 && total > budget;
+  const daysInM      = new Date(parseInt(month.split('-')[0]), parseInt(month.split('-')[1]), 0).getDate();
+  const dayOfMonth   = new Date().getDate();
+  const dailyAvg     = dayOfMonth > 0 ? total / dayOfMonth : 0;
+  const progress     = budget > 0 ? Math.min(total / budget, 1) : 0;
+  const overBudget   = budget > 0 && total > budget;
+  // FIX #3: 80% warning threshold
+  const nearBudget   = budget > 0 && !overBudget && total >= budget * 0.8;
+
+  // FIX #4: Quick Repeat — last 3 unique expenses (deduplicated by amount+category+note)
+  const recentUnique = useMemo(() => {
+    const seen = new Set<string>();
+    const result: Expense[] = [];
+    const sorted = [...expenses].sort((a, b) => b.date.localeCompare(a.date));
+    for (const e of sorted) {
+      const key = `${e.amount}|${e.categoryId}|${e.note}`;
+      if (!seen.has(key)) { seen.add(key); result.push(e); }
+      if (result.length === 3) break;
+    }
+    return result;
+  }, [expenses]);
 
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={ov.scroll}>
@@ -349,26 +373,35 @@ function OverviewTab({ expenses, budget, onSetBudget, onAdd, onEdit, colors }: {
             </Text>
             <Text style={[ov.cardTotal, { color: colors.text }]}>{fmtFull(total)}</Text>
           </View>
-          {budget > 0 ? (
-            <TouchableOpacity onPress={onSetBudget} style={[ov.budgetBadge, { backgroundColor: (overBudget ? '#EF444420' : ACCENT + '18'), borderColor: overBudget ? '#EF4444' : ACCENT }]}>
-              <Text style={[ov.budgetBadgeTxt, { color: overBudget ? '#EF4444' : ACCENT }]}>
-                Budget {fmtINR(budget)}
-              </Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity onPress={onSetBudget} style={[ov.budgetBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Ionicons name="add" size={13} color={colors.textMuted} />
-              <Text style={[ov.budgetBadgeTxt, { color: colors.textMuted }]}>Set Budget</Text>
-            </TouchableOpacity>
-          )}
+          <View style={{ alignItems: 'flex-end', gap: 6 }}>
+            {budget > 0 ? (
+              <TouchableOpacity onPress={onSetBudget} style={[ov.budgetBadge, { backgroundColor: (overBudget ? '#EF444420' : ACCENT + '18'), borderColor: overBudget ? '#EF4444' : ACCENT }]}>
+                <Text style={[ov.budgetBadgeTxt, { color: overBudget ? '#EF4444' : ACCENT }]}>
+                  Budget {fmtINR(budget)}
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity onPress={onSetBudget} style={[ov.budgetBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Ionicons name="add" size={13} color={colors.textMuted} />
+                <Text style={[ov.budgetBadgeTxt, { color: colors.textMuted }]}>Set Budget</Text>
+              </TouchableOpacity>
+            )}
+            {/* FIX #3: Approaching budget warning badge */}
+            {nearBudget && (
+              <View style={[ov.warningBadge, { backgroundColor: '#F59E0B20', borderColor: '#F59E0B' }]}>
+                <Ionicons name="warning-outline" size={11} color="#F59E0B" />
+                <Text style={[ov.warningTxt, { color: '#F59E0B' }]}>Approaching limit</Text>
+              </View>
+            )}
+          </View>
         </View>
 
         {budget > 0 && (
           <>
             <View style={[ov.barTrack, { backgroundColor: colors.border }]}>
-              <View style={[ov.barFill, { width: `${progress * 100}%`, backgroundColor: overBudget ? '#EF4444' : '#10B981' }]} />
+              <View style={[ov.barFill, { width: `${progress * 100}%`, backgroundColor: overBudget ? '#EF4444' : nearBudget ? '#F59E0B' : '#10B981' }]} />
             </View>
-            <Text style={[ov.budgetSub, { color: overBudget ? '#EF4444' : '#10B981' }]}>
+            <Text style={[ov.budgetSub, { color: overBudget ? '#EF4444' : nearBudget ? '#F59E0B' : '#10B981' }]}>
               {overBudget
                 ? `Over budget by ${fmtFull(total - budget)}`
                 : `${fmtFull(budget - total)} remaining`}
@@ -382,7 +415,7 @@ function OverviewTab({ expenses, budget, onSetBudget, onAdd, onEdit, colors }: {
         {[
           { label: 'Transactions', val: String(count), icon: 'list-outline' },
           { label: 'Daily Avg',    val: fmtINR(dailyAvg), icon: 'stats-chart-outline' },
-          { label: 'Days Left',    val: String(daysInMonth - dayOfMonth), icon: 'calendar-outline' },
+          { label: 'Days Left',    val: String(daysInM - dayOfMonth), icon: 'calendar-outline' },
         ].map(s => (
           <View key={s.label} style={[ov.statTile, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name={s.icon as any} size={16} color={ACCENT} />
@@ -397,6 +430,37 @@ function OverviewTab({ expenses, budget, onSetBudget, onAdd, onEdit, colors }: {
         <Ionicons name="add-circle-outline" size={20} color="#fff" />
         <Text style={ov.addBtnTxt}>Add Expense</Text>
       </TouchableOpacity>
+
+      {/* FIX #4: Quick Repeat section */}
+      {recentUnique.length > 0 && (
+        <>
+          <Text style={[ov.sectionTitle, { color: colors.textMuted }]}>Quick Repeat</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={ov.repeatRow}>
+            {recentUnique.map(e => {
+              const cat = getCat(e.categoryId);
+              return (
+                <TouchableOpacity
+                  key={e.id}
+                  style={[ov.repeatChip, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  onPress={() => onRepeat(e)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[ov.repeatIcon, { backgroundColor: cat.color + '22' }]}>
+                    <Ionicons name={cat.icon as any} size={14} color={cat.color} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[ov.repeatLabel, { color: colors.text }]} numberOfLines={1}>
+                      {e.note || cat.label}
+                    </Text>
+                    <Text style={[ov.repeatAmt, { color: ACCENT }]}>{fmtFull(e.amount)}</Text>
+                  </View>
+                  <Ionicons name="refresh-outline" size={14} color={colors.textMuted} />
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </>
+      )}
 
       {/* Recent */}
       {monthExpenses.length > 0 && (
@@ -427,6 +491,8 @@ const ov = StyleSheet.create({
   cardTotal:       { fontFamily: Fonts.bold, fontSize: 30 },
   budgetBadge:     { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radii.pill, borderWidth: 1.5 },
   budgetBadgeTxt:  { fontFamily: Fonts.semibold, fontSize: 12 },
+  warningBadge:    { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: Radii.pill, borderWidth: 1.5 },
+  warningTxt:      { fontFamily: Fonts.semibold, fontSize: 11 },
   barTrack:        { height: 8, borderRadius: 4, overflow: 'hidden', marginBottom: 6 },
   barFill:         { height: '100%', borderRadius: 4 },
   budgetSub:       { fontFamily: Fonts.medium, fontSize: 12 },
@@ -437,6 +503,11 @@ const ov = StyleSheet.create({
   addBtn:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 48, borderRadius: Radii.lg, marginBottom: Spacing.lg },
   addBtnTxt:       { fontFamily: Fonts.bold, fontSize: 15, color: '#fff' },
   sectionTitle:    { fontFamily: Fonts.semibold, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: Spacing.sm },
+  repeatRow:       { gap: Spacing.sm, paddingBottom: Spacing.sm },
+  repeatChip:      { flexDirection: 'row', alignItems: 'center', gap: 8, padding: Spacing.sm, borderRadius: Radii.lg, borderWidth: 1, width: 160, marginBottom: Spacing.sm },
+  repeatIcon:      { width: 28, height: 28, borderRadius: Radii.sm, alignItems: 'center', justifyContent: 'center' },
+  repeatLabel:     { fontFamily: Fonts.medium, fontSize: 12 },
+  repeatAmt:       { fontFamily: Fonts.bold, fontSize: 13 },
   empty:           { alignItems: 'center', paddingTop: 48, gap: Spacing.md },
   emptyTxt:        { fontFamily: Fonts.regular, fontSize: 14, textAlign: 'center', lineHeight: 22 },
 });
@@ -447,7 +518,23 @@ function HistoryTab({ expenses, month, onMonthChange, onEdit, colors }: {
   onMonthChange: (m: string) => void;
   onEdit: (e: Expense) => void; colors: Colors;
 }) {
-  const filtered = [...expenses.filter(e => e.date.startsWith(month))].sort((a, b) => b.date.localeCompare(a.date));
+  // FIX #6: Search state
+  const [search, setSearch] = useState('');
+
+  const monthExpenses = [...expenses.filter(e => e.date.startsWith(month))].sort((a, b) => b.date.localeCompare(a.date));
+
+  // Apply search filter
+  const filtered = search.trim()
+    ? monthExpenses.filter(e => {
+        const q = search.trim().toLowerCase();
+        const cat = getCat(e.categoryId);
+        return (
+          e.note.toLowerCase().includes(q) ||
+          cat.label.toLowerCase().includes(q) ||
+          String(e.amount).includes(q)
+        );
+      })
+    : monthExpenses;
 
   // Group by date
   const groups: { date: string; items: Expense[] }[] = [];
@@ -461,11 +548,31 @@ function HistoryTab({ expenses, month, onMonthChange, onEdit, colors }: {
 
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: Spacing.huge }}>
-      <MonthNav month={month} onChange={onMonthChange} colors={colors} />
+      <MonthNav month={month} onChange={(m) => { setSearch(''); onMonthChange(m); }} colors={colors} />
+
+      {/* FIX #6: Search bar */}
+      <View style={[ht.searchWrap, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+        <Ionicons name="search-outline" size={16} color={colors.textMuted} />
+        <TextInput
+          style={[ht.searchInput, { color: colors.text }]}
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search by note, category or amount…"
+          placeholderTextColor={colors.textMuted}
+          returnKeyType="search"
+        />
+        {search.length > 0 && (
+          <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+        )}
+      </View>
 
       {filtered.length > 0 && (
         <View style={[ht.totalRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[ht.totalLabel, { color: colors.textMuted }]}>Total spent</Text>
+          <Text style={[ht.totalLabel, { color: colors.textMuted }]}>
+            {search.trim() ? `${filtered.length} result${filtered.length !== 1 ? 's' : ''}` : 'Total spent'}
+          </Text>
           <Text style={[ht.totalVal, { color: ACCENT }]}>{fmtFull(monthTotal)}</Text>
         </View>
       )}
@@ -482,20 +589,82 @@ function HistoryTab({ expenses, month, onMonthChange, onEdit, colors }: {
 
       {filtered.length === 0 && (
         <View style={ov.empty}>
-          <Ionicons name="receipt-outline" size={52} color={colors.textMuted} />
-          <Text style={[ov.emptyTxt, { color: colors.textMuted }]}>No expenses in {monthLabel(month)}.</Text>
+          <Ionicons name={search.trim() ? 'search-outline' : 'receipt-outline'} size={52} color={colors.textMuted} />
+          <Text style={[ov.emptyTxt, { color: colors.textMuted }]}>
+            {search.trim() ? `No results for "${search}"` : `No expenses in ${monthLabel(month)}.`}
+          </Text>
         </View>
       )}
     </ScrollView>
   );
 }
 const ht = StyleSheet.create({
-  totalRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.md, borderRadius: Radii.lg, borderWidth: 1, marginBottom: Spacing.md },
-  totalLabel: { fontFamily: Fonts.medium, fontSize: 13 },
-  totalVal:   { fontFamily: Fonts.bold, fontSize: 18 },
-  dateRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  dateLabel:  { fontFamily: Fonts.semibold, fontSize: 13 },
-  dateSub:    { fontFamily: Fonts.medium, fontSize: 12 },
+  totalRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.md, borderRadius: Radii.lg, borderWidth: 1, marginBottom: Spacing.md },
+  totalLabel:  { fontFamily: Fonts.medium, fontSize: 13 },
+  totalVal:    { fontFamily: Fonts.bold, fontSize: 18 },
+  dateRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  dateLabel:   { fontFamily: Fonts.semibold, fontSize: 13 },
+  dateSub:     { fontFamily: Fonts.medium, fontSize: 12 },
+  searchWrap:  { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, borderRadius: Radii.lg, borderWidth: 1.5, paddingHorizontal: Spacing.md, height: 44, marginBottom: Spacing.md },
+  searchInput: { flex: 1, fontFamily: Fonts.regular, fontSize: 14 },
+});
+
+// ── Donut Chart ───────────────────────────────────────────────────────────────
+// FIX #2: Horizontal stacked bar as donut-style category visualization
+function DonutChart({ catRows, total, colors }: {
+  catRows: { cat: typeof CATEGORIES[number]; total: number }[];
+  total: number;
+  colors: Colors;
+}) {
+  if (catRows.length === 0 || total === 0) return null;
+  const SIZE = 140;
+  const STROKE = 22;
+
+  // Build arc segments using a stacked horizontal bar (simpler, reliable cross-platform)
+  return (
+    <View style={dc.wrap}>
+      {/* Stacked bar visualization */}
+      <View style={dc.stackedBar}>
+        {catRows.map(({ cat, total: t }) => {
+          const pct = total > 0 ? (t / total) * 100 : 0;
+          return (
+            <View
+              key={cat.id}
+              style={[dc.segment, { flex: pct, backgroundColor: cat.color }]}
+            />
+          );
+        })}
+      </View>
+
+      {/* Legend */}
+      <View style={dc.legend}>
+        {catRows.slice(0, 6).map(({ cat, total: t }) => {
+          const pct = total > 0 ? (t / total) * 100 : 0;
+          return (
+            <View key={cat.id} style={dc.legendItem}>
+              <View style={[dc.legendDot, { backgroundColor: cat.color }]} />
+              <Text style={[dc.legendLabel, { color: colors.text }]} numberOfLines={1}>
+                {cat.label}
+              </Text>
+              <Text style={[dc.legendPct, { color: colors.textMuted }]}>
+                {pct.toFixed(0)}%
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+const dc = StyleSheet.create({
+  wrap:        { marginBottom: Spacing.lg },
+  stackedBar:  { flexDirection: 'row', height: 20, borderRadius: 10, overflow: 'hidden', marginBottom: Spacing.md },
+  segment:     { minWidth: 2 },
+  legend:      { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  legendItem:  { flexDirection: 'row', alignItems: 'center', gap: 5, minWidth: '45%', flex: 1 },
+  legendDot:   { width: 10, height: 10, borderRadius: 5 },
+  legendLabel: { flex: 1, fontFamily: Fonts.medium, fontSize: 12 },
+  legendPct:   { fontFamily: Fonts.regular, fontSize: 11 },
 });
 
 // ── Analytics Tab ─────────────────────────────────────────────────────────────
@@ -503,7 +672,7 @@ function AnalyticsTab({ expenses, month, onMonthChange, colors }: {
   expenses: Expense[]; month: string;
   onMonthChange: (m: string) => void; colors: Colors;
 }) {
-  const monthExp  = expenses.filter(e => e.date.startsWith(month));
+  const monthExp   = expenses.filter(e => e.date.startsWith(month));
   const monthTotal = monthExp.reduce((s, e) => s + e.amount, 0);
 
   // Category breakdown
@@ -525,9 +694,61 @@ function AnalyticsTab({ expenses, month, onMonthChange, colors }: {
   const BAR_MAX_H = 80;
   const SHORT_MONTHS = ['J','F','M','A','M','J','J','A','S','O','N','D'];
 
+  // FIX #7: Month-over-month comparison
+  const prevMon    = prevMonth(month);
+  const prevTotal  = expenses
+    .filter(e => e.date.startsWith(prevMon))
+    .reduce((s, e) => s + e.amount, 0);
+  const momDiff    = monthTotal - prevTotal;
+  const momPct     = prevTotal > 0 ? (momDiff / prevTotal) * 100 : null;
+  const momUp      = momDiff > 0;
+
+  // FIX #5: Daily spending for selected month
+  const numDays  = daysInMonth(month);
+  const dailyMap: Record<number, number> = {};
+  for (const e of monthExp) {
+    const day = parseInt(e.date.split('-')[2], 10);
+    dailyMap[day] = (dailyMap[day] ?? 0) + e.amount;
+  }
+  const maxDaily = Math.max(...Object.values(dailyMap), 1);
+  const DAILY_BAR_MAX = 50;
+
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: Spacing.huge }}>
       <MonthNav month={month} onChange={onMonthChange} colors={colors} />
+
+      {/* FIX #7: Month-over-month card */}
+      <View style={[an.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[an.cardTitle, { color: colors.text }]}>vs Last Month ({monthLabel(prevMon)})</Text>
+        {prevTotal === 0 && monthTotal === 0 ? (
+          <Text style={[an.emptyTxt, { color: colors.textMuted }]}>No data for comparison.</Text>
+        ) : (
+          <View style={an.momRow}>
+            <View style={an.momCol}>
+              <Text style={[an.momCaption, { color: colors.textMuted }]}>{monthLabel(prevMon)}</Text>
+              <Text style={[an.momVal, { color: colors.text }]}>{fmtFull(prevTotal)}</Text>
+            </View>
+            <View style={an.momArrow}>
+              <Ionicons
+                name={momUp ? 'arrow-up' : 'arrow-down'}
+                size={20}
+                color={momUp ? '#EF4444' : '#10B981'}
+              />
+              {momPct !== null ? (
+                <Text style={[an.momPct, { color: momUp ? '#EF4444' : '#10B981' }]}>
+                  {momUp ? '+' : ''}{momPct.toFixed(1)}%
+                </Text>
+              ) : (
+                <Text style={[an.momPct, { color: momUp ? '#EF4444' : '#10B981' }]}>New</Text>
+              )}
+            </View>
+            <View style={[an.momCol, { alignItems: 'flex-end' }]}>
+              <Text style={[an.momCaption, { color: colors.textMuted }]}>{monthLabel(month)}</Text>
+              <Text style={[an.momVal, { color: colors.text }]}>{fmtFull(monthTotal)}</Text>
+            </View>
+          </View>
+        )}
+      </View>
 
       {/* Monthly chart */}
       <View style={[an.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -555,28 +776,64 @@ function AnalyticsTab({ expenses, month, onMonthChange, colors }: {
         </View>
       </View>
 
-      {/* Category breakdown */}
+      {/* FIX #5: Daily spending chart */}
+      <View style={[an.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[an.cardTitle, { color: colors.text }]}>Daily Spending — {monthLabel(month)}</Text>
+        {monthExp.length === 0 ? (
+          <Text style={[an.emptyTxt, { color: colors.textMuted }]}>No data for {monthLabel(month)}.</Text>
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={[an.dailyChartWrap, { height: DAILY_BAR_MAX + 32 }]}>
+              {Array.from({ length: numDays }, (_, i) => i + 1).map(day => {
+                const val = dailyMap[day] ?? 0;
+                const barH = val > 0 ? Math.max((val / maxDaily) * DAILY_BAR_MAX, 3) : 0;
+                const today = new Date().getDate();
+                const isToday = month === currentMonthKey() && day === today;
+                return (
+                  <View key={day} style={an.dailyBarCol}>
+                    <View style={[an.dailyBarTrack, { height: DAILY_BAR_MAX }]}>
+                      <View style={[an.dailyBarFill, {
+                        height: barH,
+                        backgroundColor: isToday ? ACCENT : val > 0 ? ACCENT + '88' : 'transparent',
+                      }]} />
+                    </View>
+                    <Text style={[an.dailyLabel, { color: isToday ? ACCENT : colors.textMuted, fontFamily: isToday ? Fonts.bold : Fonts.regular }]}>
+                      {day}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </ScrollView>
+        )}
+      </View>
+
+      {/* FIX #2: Donut/stacked chart + category breakdown */}
       <View style={[an.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[an.cardTitle, { color: colors.text }]}>By Category</Text>
-        {catRows.length === 0 && (
+        {catRows.length === 0 ? (
           <Text style={[an.emptyTxt, { color: colors.textMuted }]}>No data for {monthLabel(month)}.</Text>
+        ) : (
+          <>
+            <DonutChart catRows={catRows} total={monthTotal} colors={colors} />
+            {catRows.map(({ cat, total }) => {
+              const pct = monthTotal > 0 ? (total / monthTotal) * 100 : 0;
+              return (
+                <View key={cat.id} style={an.catRow}>
+                  <View style={an.catMeta}>
+                    <View style={[an.catDot, { backgroundColor: cat.color }]} />
+                    <Text style={[an.catName, { color: colors.text }]}>{cat.label}</Text>
+                    <Text style={[an.catPct, { color: colors.textMuted }]}>{pct.toFixed(1)}%</Text>
+                    <Text style={[an.catAmt, { color: colors.text }]}>{fmtFull(total)}</Text>
+                  </View>
+                  <View style={[an.catBarTrack, { backgroundColor: colors.border }]}>
+                    <View style={[an.catBarFill, { width: `${pct}%`, backgroundColor: cat.color }]} />
+                  </View>
+                </View>
+              );
+            })}
+          </>
         )}
-        {catRows.map(({ cat, total }) => {
-          const pct = monthTotal > 0 ? (total / monthTotal) * 100 : 0;
-          return (
-            <View key={cat.id} style={an.catRow}>
-              <View style={an.catMeta}>
-                <View style={[an.catDot, { backgroundColor: cat.color }]} />
-                <Text style={[an.catName, { color: colors.text }]}>{cat.label}</Text>
-                <Text style={[an.catPct, { color: colors.textMuted }]}>{pct.toFixed(1)}%</Text>
-                <Text style={[an.catAmt, { color: colors.text }]}>{fmtFull(total)}</Text>
-              </View>
-              <View style={[an.catBarTrack, { backgroundColor: colors.border }]}>
-                <View style={[an.catBarFill, { width: `${pct}%`, backgroundColor: cat.color }]} />
-              </View>
-            </View>
-          );
-        })}
       </View>
 
       {/* Top category insight */}
@@ -593,30 +850,44 @@ function AnalyticsTab({ expenses, month, onMonthChange, colors }: {
 }
 
 const an = StyleSheet.create({
-  card:        { borderRadius: Radii.xl, borderWidth: 1, padding: Spacing.lg, marginBottom: Spacing.md },
-  cardTitle:   { fontFamily: Fonts.bold, fontSize: 15, marginBottom: Spacing.lg },
-  chartWrap:   { flexDirection: 'row', alignItems: 'flex-end', gap: 4 },
-  barCol:      { flex: 1, alignItems: 'center', gap: 4 },
-  barAmt:      { fontFamily: Fonts.regular, fontSize: 9, textAlign: 'center', height: 14 },
-  barTrack:    { width: '100%', justifyContent: 'flex-end' },
-  barFill:     { width: '100%', borderRadius: 3, minHeight: 0 },
-  barLabel:    { fontSize: 12 },
-  catRow:      { marginBottom: Spacing.md },
-  catMeta:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 },
-  catDot:      { width: 10, height: 10, borderRadius: 5 },
-  catName:     { flex: 1, fontFamily: Fonts.medium, fontSize: 13 },
-  catPct:      { fontFamily: Fonts.regular, fontSize: 12 },
-  catAmt:      { fontFamily: Fonts.bold, fontSize: 13 },
-  catBarTrack: { height: 8, borderRadius: 4, overflow: 'hidden' },
-  catBarFill:  { height: '100%', borderRadius: 4 },
-  insightCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: Spacing.md, borderRadius: Radii.lg, borderWidth: 1 },
-  insightTxt:  { flex: 1, fontFamily: Fonts.medium, fontSize: 13, lineHeight: 20 },
-  emptyTxt:    { fontFamily: Fonts.regular, fontSize: 13, textAlign: 'center', paddingVertical: Spacing.lg },
+  card:           { borderRadius: Radii.xl, borderWidth: 1, padding: Spacing.lg, marginBottom: Spacing.md },
+  cardTitle:      { fontFamily: Fonts.bold, fontSize: 15, marginBottom: Spacing.lg },
+  chartWrap:      { flexDirection: 'row', alignItems: 'flex-end', gap: 4 },
+  barCol:         { flex: 1, alignItems: 'center', gap: 4 },
+  barAmt:         { fontFamily: Fonts.regular, fontSize: 9, textAlign: 'center', height: 14 },
+  barTrack:       { width: '100%', justifyContent: 'flex-end' },
+  barFill:        { width: '100%', borderRadius: 3, minHeight: 0 },
+  barLabel:       { fontSize: 12 },
+  // Month-over-month
+  momRow:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  momCol:         { flex: 1 },
+  momArrow:       { alignItems: 'center', paddingHorizontal: Spacing.sm },
+  momCaption:     { fontFamily: Fonts.regular, fontSize: 11, marginBottom: 2 },
+  momVal:         { fontFamily: Fonts.bold, fontSize: 16 },
+  momPct:         { fontFamily: Fonts.bold, fontSize: 13 },
+  // Daily chart
+  dailyChartWrap: { flexDirection: 'row', alignItems: 'flex-end', gap: 2 },
+  dailyBarCol:    { alignItems: 'center', width: 12 },
+  dailyBarTrack:  { width: '100%', justifyContent: 'flex-end' },
+  dailyBarFill:   { width: '100%', borderRadius: 2 },
+  dailyLabel:     { fontSize: 8, marginTop: 2 },
+  // Category
+  catRow:         { marginBottom: Spacing.md },
+  catMeta:        { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 },
+  catDot:         { width: 10, height: 10, borderRadius: 5 },
+  catName:        { flex: 1, fontFamily: Fonts.medium, fontSize: 13 },
+  catPct:         { fontFamily: Fonts.regular, fontSize: 12 },
+  catAmt:         { fontFamily: Fonts.bold, fontSize: 13 },
+  catBarTrack:    { height: 8, borderRadius: 4, overflow: 'hidden' },
+  catBarFill:     { height: '100%', borderRadius: 4 },
+  insightCard:    { flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: Spacing.md, borderRadius: Radii.lg, borderWidth: 1 },
+  insightTxt:     { flex: 1, fontFamily: Fonts.medium, fontSize: 13, lineHeight: 20 },
+  emptyTxt:       { fontFamily: Fonts.regular, fontSize: 13, textAlign: 'center', paddingVertical: Spacing.lg },
 });
 
 // ── Budget Modal ──────────────────────────────────────────────────────────────
-function BudgetModal({ budget, onSave, onClose, colors }: {
-  budget: number; onSave: (n: number) => void; onClose: () => void; colors: Colors;
+function BudgetModal({ budget, onSave, onClose, colors, currencySymbol }: {
+  budget: number; onSave: (n: number) => void; onClose: () => void; colors: Colors; currencySymbol: string;
 }) {
   const [val, setVal] = useState(budget > 0 ? String(budget) : '');
   const save = () => {
@@ -631,7 +902,7 @@ function BudgetModal({ budget, onSave, onClose, colors }: {
           <Text style={[bm.title, { color: colors.text }]}>Monthly Budget</Text>
           <Text style={[bm.sub, { color: colors.textMuted }]}>Set your total spending limit for the month</Text>
           <View style={[bm.inputWrap, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-            <Text style={[bm.rupee, { color: ACCENT }]}>₹</Text>
+            <Text style={[bm.rupee, { color: ACCENT }]}>{currencySymbol}</Text>
             <TextInput
               style={[bm.input, { color: colors.text }]}
               value={val}
@@ -679,14 +950,14 @@ const TABS: { id: TabId; label: string; icon: string }[] = [
 
 export default function ExpenseTrackerScreen() {
   const { colors } = useAppTheme();
-  const [tab,          setTab]          = useState<TabId>('overview');
-  const [expenses,     setExpenses]     = useState<Expense[]>([]);
-  const [budget,       setBudget]       = useState(0);
-  const [month,        setMonth]        = useState(currentMonthKey());
-  const [addSheet,     setAddSheet]     = useState<{ visible: boolean; editing: Expense | null }>({ visible: false, editing: null });
-  const [budgetModal,  setBudgetModal]  = useState(false);
-  const [currencySymbol, setCurrencySymbol] = useState('₹');
-  const [showCurrency, setShowCurrency] = useState(false);
+  const [tab,             setTab]             = useState<TabId>('overview');
+  const [expenses,        setExpenses]        = useState<Expense[]>([]);
+  const [budget,          setBudget]          = useState(0);
+  const [month,           setMonth]           = useState(currentMonthKey());
+  const [addSheet,        setAddSheet]        = useState<{ visible: boolean; editing: Expense | null }>({ visible: false, editing: null });
+  const [budgetModal,     setBudgetModal]     = useState(false);
+  const [currencySymbol,  setCurrencySymbol]  = useState('₹');
+  const [showCurrency,    setShowCurrency]    = useState(false);
 
   useEffect(() => {
     loadJSON<Expense[]>(KEYS.expenses, []).then(setExpenses);
@@ -702,6 +973,14 @@ export default function ExpenseTrackerScreen() {
   };
   const handleDelete = (id: string) => { persistExpenses(expenses.filter(e => e.id !== id)); };
   const handleBudget = (n: number) => { setBudget(n); saveJSON(KEYS.expenseBudget, n); };
+
+  // FIX #4: Quick repeat handler — opens add sheet pre-filled for today
+  const handleRepeat = (e: Expense) => {
+    setAddSheet({
+      visible: true,
+      editing: { ...e, id: uid(), date: todayISO() },
+    });
+  };
 
   return (
     <ScreenShell title="Expense Tracker" accentColor={ACCENT} scrollable={false}>
@@ -757,6 +1036,7 @@ export default function ExpenseTrackerScreen() {
             onSetBudget={() => setBudgetModal(true)}
             onAdd={() => setAddSheet({ visible: true, editing: null })}
             onEdit={e => setAddSheet({ visible: true, editing: e })}
+            onRepeat={handleRepeat}
             colors={colors}
           />
         )}
@@ -786,6 +1066,7 @@ export default function ExpenseTrackerScreen() {
           onDelete={handleDelete}
           onClose={() => setAddSheet({ visible: false, editing: null })}
           colors={colors}
+          currencySymbol={currencySymbol}
         />
       )}
 
@@ -795,6 +1076,7 @@ export default function ExpenseTrackerScreen() {
           onSave={handleBudget}
           onClose={() => setBudgetModal(false)}
           colors={colors}
+          currencySymbol={currencySymbol}
         />
       )}
 

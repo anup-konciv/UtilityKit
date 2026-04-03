@@ -54,6 +54,13 @@ export const KEYS = {
   houseBills: 'uk_house_bills',
   electricityBills: 'uk_electricity_bills',
   groceryItems: 'uk_grocery_items',
+  subscriptions: 'uk_subscriptions',
+  documentExpiry: 'uk_document_expiry',
+  vehicleService: 'uk_vehicle_service',
+  docVaultFiles: 'uk_doc_vault_files',
+  docVaultFolders: 'uk_doc_vault_folders',
+  docVaultAuth: 'uk_doc_vault_auth',
+  docVaultSettings: 'uk_doc_vault_settings',
 } as const;
 
 export async function loadJSON<T>(key: string, fallback: T): Promise<T> {
