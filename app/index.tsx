@@ -24,18 +24,18 @@ function GridCard({ item, colors, isFav, onToggleFav }: { item: ToolMeta; colors
   const styles = useMemo(() => gridCardStyles(colors), [colors]);
   return (
     <TouchableOpacity
-      style={[styles.card, { borderLeftColor: item.accent }]}
+      style={styles.card}
       onPress={() => router.push(item.route as any)}
       activeOpacity={0.82}
     >
-      <View style={[styles.iconWrap, { backgroundColor: item.accent + '20' }]}>
+      <View style={[styles.iconWrap, { backgroundColor: item.accent + '15' }]}>
         <Ionicons name={item.icon as any} size={24} color={item.accent} />
       </View>
       <View style={styles.topRight}>
         <TouchableOpacity onPress={onToggleFav} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name={isFav ? 'star' : 'star-outline'} size={16} color={isFav ? '#F59E0B' : colors.textMuted} />
         </TouchableOpacity>
-        <View style={[styles.badge, { backgroundColor: item.accent + '18' }]}>
+        <View style={[styles.badge, { backgroundColor: item.accent + '14' }]}>
           <Text style={[styles.badgeText, { color: item.accent }]}>{item.badge}</Text>
         </View>
       </View>
@@ -54,13 +54,17 @@ const gridCardStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       padding: Spacing.md,
       borderWidth: 1,
       borderColor: colors.border,
-      borderLeftWidth: 4,
       minHeight: 120,
+      elevation: 2,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.06,
+      shadowRadius: 4,
     },
     iconWrap: {
-      width: 46,
-      height: 46,
-      borderRadius: Radii.md,
+      width: 44,
+      height: 44,
+      borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
       marginBottom: Spacing.sm,
@@ -75,10 +79,10 @@ const gridCardStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
     },
     badge: {
       paddingHorizontal: 8,
-      paddingVertical: 4,
+      paddingVertical: 3,
       borderRadius: Radii.pill,
     },
-    badgeText: { fontSize: 10, fontFamily: Fonts.bold, textTransform: 'uppercase', letterSpacing: 0.5 },
+    badgeText: { fontSize: 9, fontFamily: Fonts.bold, textTransform: 'uppercase', letterSpacing: 0.5 },
     label: { fontSize: 14, fontFamily: Fonts.semibold, color: colors.text, marginBottom: 3 },
     desc: { fontSize: 11, fontFamily: Fonts.regular, color: colors.textMuted, lineHeight: 16 },
   });
@@ -88,11 +92,11 @@ function ListCard({ item, colors, isFav, onToggleFav }: { item: ToolMeta; colors
   const styles = useMemo(() => listCardStyles(colors), [colors]);
   return (
     <TouchableOpacity
-      style={[styles.card, { borderLeftColor: item.accent }]}
+      style={styles.card}
       onPress={() => router.push(item.route as any)}
       activeOpacity={0.82}
     >
-      <View style={[styles.iconWrap, { backgroundColor: item.accent + '20' }]}>
+      <View style={[styles.iconWrap, { backgroundColor: item.accent + '15' }]}>
         <Ionicons name={item.icon as any} size={22} color={item.accent} />
       </View>
       <View style={styles.info}>
@@ -102,7 +106,7 @@ function ListCard({ item, colors, isFav, onToggleFav }: { item: ToolMeta; colors
       <TouchableOpacity onPress={onToggleFav} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginRight: 4 }}>
         <Ionicons name={isFav ? 'star' : 'star-outline'} size={16} color={isFav ? '#F59E0B' : colors.textMuted} />
       </TouchableOpacity>
-      <View style={[styles.badge, { backgroundColor: item.accent + '18' }]}>
+      <View style={[styles.badge, { backgroundColor: item.accent + '14' }]}>
         <Text style={[styles.badgeText, { color: item.accent }]}>{item.badge}</Text>
       </View>
       <Ionicons name="chevron-forward" size={16} color={colors.textMuted} style={{ marginLeft: 6 }} />
@@ -120,12 +124,16 @@ const listCardStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       padding: Spacing.md,
       borderWidth: 1,
       borderColor: colors.border,
-      borderLeftWidth: 4,
+      elevation: 2,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.06,
+      shadowRadius: 4,
     },
     iconWrap: {
       width: 42,
       height: 42,
-      borderRadius: Radii.md,
+      borderRadius: 14,
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: Spacing.md,
@@ -133,11 +141,11 @@ const listCardStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
     info: { flex: 1 },
     badge: {
       paddingHorizontal: 8,
-      paddingVertical: 4,
+      paddingVertical: 3,
       borderRadius: Radii.pill,
       marginRight: 2,
     },
-    badgeText: { fontSize: 10, fontFamily: Fonts.bold, textTransform: 'uppercase', letterSpacing: 0.5 },
+    badgeText: { fontSize: 9, fontFamily: Fonts.bold, textTransform: 'uppercase', letterSpacing: 0.5 },
     label: { fontSize: 14, fontFamily: Fonts.semibold, color: colors.text, marginBottom: 2 },
     desc: { fontSize: 11, fontFamily: Fonts.regular, color: colors.textMuted },
   });
@@ -158,9 +166,9 @@ function EditCard({
 }) {
   const styles = useMemo(() => editCardStyles(colors), [colors]);
   return (
-    <View style={[styles.card, { borderLeftColor: item.accent }]}>
+    <View style={styles.card}>
       <Ionicons name="reorder-three-outline" size={22} color={colors.textMuted} style={{ marginRight: 10 }} />
-      <View style={[styles.iconWrap, { backgroundColor: item.accent + '20' }]}>
+      <View style={[styles.iconWrap, { backgroundColor: item.accent + '15' }]}>
         <Ionicons name={item.icon as any} size={20} color={item.accent} />
       </View>
       <Text style={styles.label} numberOfLines={1}>{item.label}</Text>
@@ -195,12 +203,16 @@ const editCardStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       paddingVertical: 12,
       borderWidth: 1,
       borderColor: colors.border,
-      borderLeftWidth: 4,
+      elevation: 2,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.06,
+      shadowRadius: 4,
     },
     iconWrap: {
       width: 38,
       height: 38,
-      borderRadius: Radii.md,
+      borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: Spacing.sm,

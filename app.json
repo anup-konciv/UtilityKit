@@ -39,7 +39,15 @@
           "backgroundColor": "#D4960A"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Doc Vault needs camera access to capture document photos.",
+          "photosPermission": "Doc Vault needs photo library access to import images."
+        }
+      ],
+      "expo-document-picker"
     ],
     "experiments": {
       "typedRoutes": true
