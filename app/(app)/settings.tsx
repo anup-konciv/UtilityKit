@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Switch, Alert } from 'react-n
 import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '@/context/auth';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
@@ -16,6 +17,7 @@ const MODES: { value: ThemeMode; label: string; icon: string; desc: string }[] =
 
 export default function SettingsScreen() {
   const { colors, mode, setMode } = useAppTheme();
+  const { session, signOut } = useAuth();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const [hapticsEnabled, setHapticsEnabled] = useState(true);
@@ -245,6 +247,36 @@ export default function SettingsScreen() {
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
         </TouchableOpacity>
+      </View>
+
+      <View style={styles.divider} />
+
+      {/* Account */}
+      <Text style={styles.sectionLabel}>Account</Text>
+      <View style={[styles.prefCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        {session ? (
+          <TouchableOpacity style={styles.dataRow} onPress={signOut}>
+            <View style={[styles.prefIcon, { backgroundColor: '#EF444420' }]}>
+              <Ionicons name="log-out-outline" size={18} color="#EF4444" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.prefLabel, { color: '#EF4444' }]}>Sign Out</Text>
+              <Text style={[styles.prefDesc, { color: colors.textMuted }]}>Log out of your account</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.dataRow} onPress={signOut}>
+            <View style={[styles.prefIcon, { backgroundColor: '#10B98120' }]}>
+              <Ionicons name="log-in-outline" size={18} color="#10B981" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.prefLabel, { color: '#10B981' }]}>Sign In / Register</Text>
+              <Text style={[styles.prefDesc, { color: colors.textMuted }]}>Create an account to sync your data</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.divider} />

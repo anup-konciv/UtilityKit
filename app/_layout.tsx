@@ -1,4 +1,4 @@
-import { Stack } from 'expo-router';
+import { Slot } from 'expo-router';
 import { useEffect } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
@@ -10,6 +10,7 @@ import {
 } from '@expo-google-fonts/space-grotesk';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import ThemedStatusBar from '@/components/ThemedStatusBar';
+import { AuthProvider } from '@/context/auth';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -29,11 +30,9 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider>
-      <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
-        <Stack.Screen name="index" />
-        <Stack.Screen name="settings" />
-        <Stack.Screen name="tools" />
-      </Stack>
+      <AuthProvider>
+        <Slot />
+      </AuthProvider>
       <ThemedStatusBar />
     </ThemeProvider>
   );
