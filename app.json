@@ -26,6 +26,7 @@
         "backgroundColor": "#D4960A"
       },
       "package": "com.utilitykit.app",
+      "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ]

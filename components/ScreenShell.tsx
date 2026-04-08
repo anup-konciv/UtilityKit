@@ -5,6 +5,8 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -19,6 +21,12 @@ type Props = {
   scrollable?: boolean;
   accentColor?: string;
   rightAction?: ReactNode;
+  /**
+   * Removes the default top padding inside the content container. Use this
+   * for screens whose first child is its own header/tab strip and should sit
+   * flush with the ScreenShell header divider.
+   */
+  bleedTop?: boolean;
 };
 
 export default function ScreenShell({
@@ -27,6 +35,7 @@ export default function ScreenShell({
   scrollable = true,
   accentColor,
   rightAction,
+  bleedTop = false,
 }: Props) {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -36,7 +45,14 @@ export default function ScreenShell({
     <View style={styles.headerWrapper}>
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => router.back()}
+          // `router.back()` is a no-op when the navigator has no history —
+          // which happens when a tool URL is opened directly on web or via a
+          // deep link on native. Probe `canGoBack()` first and fall back to
+          // the app home route so the back button always lands somewhere.
+          onPress={() => {
+            if (router.canGoBack()) router.back();
+            else router.replace('/');
+          }}
           style={[
             styles.backBtn,
             {
@@ -67,18 +83,33 @@ export default function ScreenShell({
         <View style={[styles.glowSecondary, { backgroundColor: withAlpha(accent, '10') }]} />
       </View>
       {header}
-      {scrollable ? (
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {children}
-        </ScrollView>
-      ) : (
-        <View style={styles.flat}>{children}</View>
-      )}
+      {/*
+        Single keyboard-avoidance shell for every tool. Wrapping at this level
+        keeps inputs visible above the on-screen keyboard on both iOS and
+        Android without each tool screen having to repeat the boilerplate.
+        On iOS we use `padding` so the layout shrinks above the keyboard;
+        Android works best with `height` paired with the default
+        `adjustResize` window soft-input mode.
+      */}
+      <KeyboardAvoidingView
+        style={styles.kav}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
+        {scrollable ? (
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={[styles.scrollContent, bleedTop && styles.noTopPad]}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+          >
+            {children}
+          </ScrollView>
+        ) : (
+          <View style={[styles.flat, bleedTop && styles.noTopPad]}>{children}</View>
+        )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -152,6 +183,7 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       height: 2,
       width: '100%',
     },
+    kav: { flex: 1 },
     scroll: { flex: 1 },
     scrollContent: {
       paddingHorizontal: Spacing.lg,
@@ -170,4 +202,5 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       maxWidth: 860,
       alignSelf: 'center',
     },
+    noTopPad: { paddingTop: 0 },
   });

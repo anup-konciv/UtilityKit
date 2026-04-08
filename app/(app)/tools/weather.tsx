@@ -9,6 +9,8 @@ import {
   StyleSheet,
   ActivityIndicator,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -182,6 +184,10 @@ function SearchModal({ onSelect, onClose }: { onSelect: (l: SavedLocation) => vo
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={sm.root} edges={['top', 'bottom']}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         {/* Header */}
         <View style={sm.header}>
           <TouchableOpacity onPress={onClose} style={sm.closeBtn}>
@@ -258,6 +264,7 @@ function SearchModal({ onSelect, onClose }: { onSelect: (l: SavedLocation) => vo
             </TouchableOpacity>
           )}
         />
+      </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );
