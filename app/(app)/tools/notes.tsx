@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import { hashPin, verifyPin } from '@/lib/pin';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -31,12 +32,19 @@ type Note = {
   content: string;
   color: string;
   locked: boolean;
-  pin: string;
+  /** SHA-256 hash of the 4-digit PIN. Empty when `locked` is false. */
+  pinHash: string;
   updatedAt: number;
   createdAt: number;
   starred: boolean;
   category: Category;
 };
+
+/**
+ * Backwards-compat shape: notes used to ship a plaintext `pin` field.
+ * On hydration we migrate any such note to `pinHash` and persist back.
+ */
+type LegacyNote = Note & { pin?: string };
 
 type SortMode = 'newest' | 'oldest' | 'az' | 'edited';
 
@@ -185,7 +193,12 @@ function NoteEditor({
   const [content, setContent] = useState(initial.content);
   const [color, setColor] = useState(initial.color);
   const [locked, setLocked] = useState(initial.locked);
-  const [pin, setPin] = useState(initial.pin);
+  // Plaintext draft PIN; only ever lives in component state. We hash on save.
+  // When editing an already-locked note we leave this empty until the user
+  // explicitly changes the PIN — `pinDirty` decides whether to overwrite the
+  // existing hash.
+  const [pin, setPin] = useState('');
+  const [pinDirty, setPinDirty] = useState(false);
   const [category, setCategory] = useState<Category>(initial.category ?? 'Personal');
   const [showColors, setShowColors] = useState(false);
   const [showLock, setShowLock] = useState(false);
@@ -211,18 +224,35 @@ function NoteEditor({
     return () => { showSub.remove(); hideSub.remove(); };
   }, []);
 
-  const toggleLock = () => { if (locked) { setLocked(false); setPin(''); } else setLocked(true); };
-  const canSave = !locked || pin.length === 4;
+  const toggleLock = () => {
+    if (locked) {
+      setLocked(false);
+      setPin('');
+      setPinDirty(true);
+    } else {
+      setLocked(true);
+    }
+  };
+  // For a brand-new lock the user must enter 4 digits. For an existing
+  // locked note we accept "no change" — the existing hash carries over.
+  const needsNewPin = locked && (!initial.locked || pinDirty);
+  const canSave = !locked || !needsNewPin || pin.length === 4;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!canSave) return;
+    let pinHash = initial.pinHash ?? '';
+    if (!locked) {
+      pinHash = '';
+    } else if (needsNewPin) {
+      pinHash = await hashPin(pin);
+    }
     onSave({
       ...initial,
       title: title.trim(),
       content,
       color,
       locked,
-      pin,
+      pinHash,
       category,
       updatedAt: Date.now(),
       createdAt: initial.createdAt ?? Date.now(),
@@ -411,27 +441,29 @@ function NoteEditor({
                 </View>
                 {locked && (
                   <View style={es.pinSection}>
-                    <Text style={es.pinLabel}>4-digit PIN</Text>
+                    <Text style={es.pinLabel}>
+                      {needsNewPin ? '4-digit PIN' : 'PIN already set — tap to change'}
+                    </Text>
                     <TextInput
                       style={[es.pinInput, { color: colors.text, borderColor: pin.length === 4 ? '#10B981' : colors.border }]}
                       value={pin}
-                      onChangeText={(t) => setPin(t.replace(/\D/g, '').slice(0, 4))}
-                      placeholder="_ _ _ _"
+                      onChangeText={(t) => { setPin(t.replace(/\D/g, '').slice(0, 4)); setPinDirty(true); }}
+                      placeholder={needsNewPin ? '_ _ _ _' : '••••'}
                       placeholderTextColor="#94A3B8"
                       keyboardType="number-pad"
                       secureTextEntry
                       maxLength={4}
-                      autoFocus
+                      autoFocus={needsNewPin}
                     />
-                    {pin.length > 0 && pin.length < 4 && (
+                    {needsNewPin && pin.length > 0 && pin.length < 4 && (
                       <Text style={es.pinHint}>Enter all 4 digits</Text>
                     )}
                   </View>
                 )}
                 <TouchableOpacity
-                  style={[es.doneBtn, (!locked || pin.length === 4) ? es.doneBtnActive : es.doneBtnDisabled]}
+                  style={[es.doneBtn, canSave ? es.doneBtnActive : es.doneBtnDisabled]}
                   onPress={() => setShowLock(false)}
-                  disabled={locked && pin.length < 4}
+                  disabled={!canSave}
                 >
                   <Text style={es.doneBtnText}>Done</Text>
                 </TouchableOpacity>
@@ -529,7 +561,23 @@ export default function NotesScreen() {
   const [categoryFilter, setCategoryFilter] = useState<Category | null>(null);
 
   useEffect(() => {
-    loadJSON<Note[]>(KEYS.notes, []).then(setNotes);
+    (async () => {
+      const raw = await loadJSON<LegacyNote[]>(KEYS.notes, []);
+      // Migrate any plaintext `pin` to `pinHash`. Notes that already have a
+      // hash are passed through untouched.
+      let dirty = false;
+      const migrated: Note[] = await Promise.all(
+        raw.map(async (n) => {
+          if (n.pinHash !== undefined && n.pin === undefined) return n as Note;
+          dirty = true;
+          const pinHash = n.locked && n.pin ? await hashPin(n.pin) : '';
+          const { pin: _legacyPin, ...rest } = n;
+          return { ...rest, pinHash } as Note;
+        })
+      );
+      setNotes(migrated);
+      if (dirty) saveJSON(KEYS.notes, migrated);
+    })();
   }, []);
 
   const persist = (next: Note[]) => { setNotes(next); saveJSON(KEYS.notes, next); };
@@ -542,7 +590,7 @@ export default function NotesScreen() {
         content: '',
         color: NOTE_COLORS[1],
         locked: false,
-        pin: '',
+        pinHash: '',
         updatedAt: Date.now(),
         createdAt: Date.now(),
         starred: false,
@@ -587,12 +635,17 @@ export default function NotesScreen() {
     setUnlockPin(next);
     setPinErr(false);
     if (next.length === 4) {
-      if (next === unlocking.pin) {
-        setEditing({ note: { ...unlocking }, isNew: false });
-        setUnlocking(null); setUnlockPin('');
-      } else {
-        setPinErr(true); setUnlockPin('');
-      }
+      const target = unlocking;
+      verifyPin(next, target.pinHash).then((ok) => {
+        if (ok) {
+          setEditing({ note: { ...target }, isNew: false });
+          setUnlocking(null);
+          setUnlockPin('');
+        } else {
+          setPinErr(true);
+          setUnlockPin('');
+        }
+      });
     }
   };
 

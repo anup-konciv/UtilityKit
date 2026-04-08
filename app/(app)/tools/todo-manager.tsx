@@ -16,6 +16,7 @@ import { Fonts, Radii, Spacing } from '@/constants/theme';
 import { hexToRgb } from '@/lib/color-utils';
 import { startOfDay } from '@/lib/date-utils';
 import { KEYS, loadJSON, saveJSON } from '@/lib/storage';
+import { haptics } from '@/lib/haptics';
 
 type Priority = 'low' | 'medium' | 'high';
 type Filter = 'all' | 'active' | 'done';
@@ -229,16 +230,24 @@ export default function TodoManagerScreen() {
   }
 
   function toggleTodo(id: string) {
+    const target = todos.find((t) => t.id === id);
+    if (target?.done) {
+      haptics.tap();
+    } else {
+      haptics.success();
+    }
     persist(
       todos.map((todo) => (todo.id === id ? { ...todo, done: !todo.done } : todo)),
     );
   }
 
   function removeTodo(id: string) {
+    haptics.warning();
     persist(todos.filter((todo) => todo.id !== id));
   }
 
   function clearCompleted() {
+    haptics.warning();
     persist(todos.filter((todo) => !todo.done));
   }
 

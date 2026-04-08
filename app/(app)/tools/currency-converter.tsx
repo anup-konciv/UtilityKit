@@ -7,6 +7,13 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
+import { useToolHistory } from '@/lib/use-tool-history';
+import { haptics } from '@/lib/haptics';
+import { cache } from '@/lib/cache';
+
+// 12 hours — exchange rates barely move during a day for everyday uses,
+// and offline survivability matters more than freshness for a converter.
+const FX_TTL_MS = 12 * 60 * 60 * 1000;
 
 const ACCENT = '#059669';
 
@@ -123,6 +130,8 @@ export default function CurrencyConverterScreen() {
   const [fromCur, setFromCur] = useState('USD');
   const [toCur, setToCur] = useState('INR');
   const [amount, setAmount] = useState('1');
+  // Persisted favourite currency pairs.
+  const favourites = useToolHistory<{ from: string; to: string }>('currency-favs', { max: 8 });
   const [rates, setRates] = useState<Record<string, number>>({});
   const [currencies, setCurrencies] = useState<string[]>(POPULAR);
   const [loading, setLoading] = useState(true);
@@ -133,14 +142,34 @@ export default function CurrencyConverterScreen() {
   const fetchRates = useCallback(async (base: string) => {
     setLoading(true);
     setError('');
+    const cacheKey = `fx:${base}`;
+
+    // Hydrate from cache immediately so the UI never shows an empty grid
+    // on a flaky network. Re-fetch in the background unless cache is fresh.
+    const cached = await cache.get<{ rates: Record<string, number>; date?: string }>(
+      cacheKey,
+      FX_TTL_MS,
+    );
+    if (cached) {
+      setRates(cached.value.rates);
+      setCurrencies(Object.keys(cached.value.rates).sort());
+      setLastUpdated(cached.value.date ?? '');
+      if (cached.fresh) {
+        setLoading(false);
+        return;
+      }
+    }
+
     try {
       const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${base}`);
       const json = await res.json();
       setRates(json.rates);
       setCurrencies(Object.keys(json.rates).sort());
       setLastUpdated(json.date ?? new Date().toISOString().slice(0, 10));
+      void cache.set(cacheKey, { rates: json.rates, date: json.date });
     } catch {
-      setError('Failed to fetch rates. Check your connection.');
+      if (!cached) setError('Failed to fetch rates. Check your connection.');
+      // Keep cached values visible if we already painted them.
     } finally {
       setLoading(false);
     }
@@ -157,10 +186,19 @@ export default function CurrencyConverterScreen() {
   const rate = rates[toCur] ?? 0;
 
   const swap = () => {
+    haptics.tap();
     const oldFrom = fromCur;
     setFromCur(toCur);
     setToCur(oldFrom);
   };
+
+  // Pin the current pair as a favourite. Dedupe by label.
+  const pinPair = useCallback(() => {
+    const label = `${fromCur} → ${toCur}`;
+    if (favourites.entries.some((e) => e.label === label)) return;
+    haptics.success();
+    favourites.push({ from: fromCur, to: toCur }, label);
+  }, [fromCur, toCur, favourites]);
 
   const sym = (code: string) => SYMBOLS[code] ?? code;
 
@@ -240,6 +278,43 @@ export default function CurrencyConverterScreen() {
               Updated: {lastUpdated}
             </Text>
           )}
+          <TouchableOpacity
+            style={[
+              styles.pinBtn,
+              { backgroundColor: ACCENT + '20', borderColor: ACCENT + '40' },
+            ]}
+            onPress={pinPair}
+          >
+            <Ionicons name="bookmark-outline" size={14} color={ACCENT} />
+            <Text style={[styles.pinBtnText, { color: ACCENT }]}>Pin pair</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Pinned pairs */}
+      {favourites.entries.length > 0 && (
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm }}>
+            <Text style={styles.gridTitle}>Pinned Pairs</Text>
+            <TouchableOpacity onPress={() => { haptics.warning(); favourites.clear(); }}>
+              <Text style={{ color: ACCENT, fontFamily: Fonts.semibold, fontSize: 12 }}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+          {favourites.entries.map((entry) => (
+            <TouchableOpacity
+              key={entry.id}
+              style={[styles.gridRow, { borderBottomColor: colors.border }]}
+              onPress={() => {
+                haptics.tap();
+                setFromCur(entry.value.from);
+                setToCur(entry.value.to);
+              }}
+            >
+              <Text style={[styles.gridCode, { color: colors.text }]}>{entry.value.from}</Text>
+              <Text style={[styles.gridName, { color: colors.textMuted }]}>→ {entry.value.to}</Text>
+              <Ionicons name="refresh" size={14} color={ACCENT} />
+            </TouchableOpacity>
+          ))}
         </View>
       )}
 
@@ -302,6 +377,19 @@ const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
     resultValue: { fontSize: 32, fontFamily: Fonts.bold },
     rateText: { fontSize: 13, fontFamily: Fonts.regular, marginTop: 8 },
     updatedText: { fontSize: 11, fontFamily: Fonts.regular, marginTop: 4 },
+    pinBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      paddingVertical: 8,
+      paddingHorizontal: 14,
+      borderRadius: Radii.pill,
+      borderWidth: 1,
+      marginTop: Spacing.md,
+      alignSelf: 'center',
+    },
+    pinBtnText: { fontSize: 12, fontFamily: Fonts.bold },
     card: { borderRadius: Radii.lg, borderWidth: 1, padding: Spacing.lg, marginBottom: Spacing.lg },
     gridTitle: { fontSize: 11, fontFamily: Fonts.bold, color: c.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: Spacing.md },
     gridRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1 },

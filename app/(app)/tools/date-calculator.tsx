@@ -4,6 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
+import { useToolHistory } from '@/lib/use-tool-history';
+import { haptics } from '@/lib/haptics';
 
 const ACCENT = '#0D9488';
 
@@ -65,6 +67,15 @@ export default function DateCalculatorScreen() {
   const [startDate, setStartDate] = useState(todayISO());
   const [daysInput, setDaysInput] = useState('');
   const [operation, setOperation] = useState<'add' | 'subtract'>('add');
+  // Saved scenarios cover both modes — discriminator carried in payload.
+  const history = useToolHistory<{
+    mode: Mode;
+    dateA?: string;
+    dateB?: string;
+    startDate?: string;
+    daysInput?: string;
+    operation?: 'add' | 'subtract';
+  }>('date-calc', { max: 10 });
 
   const betweenResult = useMemo(() => {
     const a = parseDate(dateA);
@@ -156,6 +167,19 @@ export default function DateCalculatorScreen() {
                   </View>
                 ))}
               </View>
+              <TouchableOpacity
+                style={[styles.saveBtn, { backgroundColor: ACCENT + '20' }]}
+                onPress={() => {
+                  haptics.success();
+                  history.push(
+                    { mode: 'between', dateA, dateB },
+                    `${dateA} → ${dateB} = ${betweenResult.totalDays}d`,
+                  );
+                }}
+              >
+                <Ionicons name="bookmark-outline" size={14} color={ACCENT} />
+                <Text style={[styles.saveBtnText, { color: ACCENT }]}>Save</Text>
+              </TouchableOpacity>
             </View>
           )}
         </>
@@ -219,9 +243,64 @@ export default function DateCalculatorScreen() {
               <Text style={[styles.resultLabel, { color: colors.textMuted }]}>Result</Text>
               <Text style={[styles.resultMain, { color: ACCENT }]}>{addSubResult.iso}</Text>
               <Text style={[styles.resultFormatted, { color: colors.text }]}>{addSubResult.formatted}</Text>
+              <TouchableOpacity
+                style={[styles.saveBtn, { backgroundColor: ACCENT + '20' }]}
+                onPress={() => {
+                  haptics.success();
+                  history.push(
+                    { mode: 'addsubtract', startDate, daysInput, operation },
+                    `${startDate} ${operation === 'add' ? '+' : '−'} ${daysInput}d → ${addSubResult.iso}`,
+                  );
+                }}
+              >
+                <Ionicons name="bookmark-outline" size={14} color={ACCENT} />
+                <Text style={[styles.saveBtnText, { color: ACCENT }]}>Save</Text>
+              </TouchableOpacity>
             </View>
           )}
         </>
+      )}
+
+      {history.entries.length > 0 && (
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm }}>
+            <Text style={[styles.cardLabel, { marginBottom: 0 }]}>Saved</Text>
+            <TouchableOpacity onPress={() => { haptics.warning(); history.clear(); }}>
+              <Text style={[{ color: ACCENT, fontFamily: Fonts.semibold, fontSize: 12 }]}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+          {history.entries.map((entry, idx) => (
+            <TouchableOpacity
+              key={entry.id}
+              style={[
+                {
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingVertical: 10,
+                },
+                idx < history.entries.length - 1 ? { borderBottomWidth: 0.5, borderBottomColor: colors.border } : null,
+              ]}
+              onPress={() => {
+                haptics.tap();
+                setMode(entry.value.mode);
+                if (entry.value.mode === 'between') {
+                  if (entry.value.dateA) setDateA(entry.value.dateA);
+                  if (entry.value.dateB) setDateB(entry.value.dateB);
+                } else {
+                  if (entry.value.startDate) setStartDate(entry.value.startDate);
+                  if (entry.value.daysInput !== undefined) setDaysInput(entry.value.daysInput);
+                  if (entry.value.operation) setOperation(entry.value.operation);
+                }
+              }}
+            >
+              <Text style={[{ color: colors.text, fontFamily: Fonts.semibold, fontSize: 13, flex: 1 }]} numberOfLines={1}>
+                {entry.label}
+              </Text>
+              <Ionicons name="refresh" size={14} color={colors.textMuted} />
+            </TouchableOpacity>
+          ))}
+        </View>
       )}
     </ScreenShell>
   );
@@ -248,6 +327,18 @@ const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
     resultMain: { fontSize: 32, fontFamily: Fonts.bold },
     resultSub: { fontSize: 16, fontFamily: Fonts.medium, marginTop: 4, marginBottom: Spacing.md },
     resultFormatted: { fontSize: 14, fontFamily: Fonts.medium, marginTop: 4 },
+    saveBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      paddingVertical: 8,
+      paddingHorizontal: 14,
+      borderRadius: Radii.pill,
+      marginTop: Spacing.md,
+      alignSelf: 'flex-start',
+    },
+    saveBtnText: { fontSize: 12, fontFamily: Fonts.bold },
     detailGrid: { flexDirection: 'row', gap: Spacing.xl, marginTop: Spacing.sm },
     detailItem: { alignItems: 'center' },
     detailVal: { fontSize: 16, fontFamily: Fonts.bold },

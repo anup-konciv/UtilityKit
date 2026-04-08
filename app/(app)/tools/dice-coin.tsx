@@ -1,9 +1,10 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, FlatList, Vibration, Animated } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, FlatList, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
+import { haptics } from '@/lib/haptics';
 
 const ACCENT = '#F59E0B';
 const DICE_TYPES = [4, 6, 8, 10, 12, 20] as const;
@@ -43,7 +44,7 @@ export default function DiceCoinScreen() {
 
   // ── Dice handlers ──
   const handleRoll = useCallback(() => {
-    Vibration.vibrate(40);
+    haptics.medium();
     const results: number[] = [];
     for (let i = 0; i < diceCount; i++) {
       results.push(rollDice(diceType));
@@ -65,7 +66,7 @@ export default function DiceCoinScreen() {
   // ── Coin handlers ──
   const handleFlip = useCallback(() => {
     if (isFlipping) return;
-    Vibration.vibrate(40);
+    haptics.medium();
     setIsFlipping(true);
 
     const totalToggles = 8;

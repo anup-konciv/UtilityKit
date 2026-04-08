@@ -6,6 +6,8 @@ import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 import { withAlpha } from '@/lib/color-utils';
+import { useToolHistory } from '@/lib/use-tool-history';
+import { haptics } from '@/lib/haptics';
 
 const ACCENT = '#EA580C';
 const SUCCESS = '#10B981';
@@ -23,6 +25,15 @@ export default function FuelCostScreen() {
   const [passengers, setPassengers] = useState('2');
   const [buffer, setBuffer] = useState('5');
   const [roundTrip, setRoundTrip] = useState(true);
+  const history = useToolHistory<{
+    units: UnitSystem;
+    distance: string;
+    mileage: string;
+    fuelPrice: string;
+    passengers: string;
+    buffer: string;
+    roundTrip: boolean;
+  }>('fuel-cost', { max: 8 });
 
   const distLabel = units === 'metric' ? 'km' : 'mi';
   const mileageLabel = units === 'metric' ? 'km/L' : 'MPG';
@@ -266,7 +277,62 @@ export default function FuelCostScreen() {
         <Text style={[styles.reserveCopy, { color: colors.textMuted }]}>
           Buffer gives you a safer margin for traffic, weather, detours, and AC-heavy city driving.
         </Text>
+        {trip && (
+          <TouchableOpacity
+            style={[styles.saveBtn, { backgroundColor: withAlpha(ACCENT, '20') }]}
+            onPress={() => {
+              haptics.success();
+              history.push(
+                { units, distance, mileage, fuelPrice, passengers, buffer, roundTrip },
+                `${trip.plannedDistance.toFixed(0)} ${distLabel} • ${trip.fuelNeeded.toFixed(1)} ${volumeLabel} • ${trip.totalCost.toFixed(0)}`,
+              );
+            }}
+          >
+            <Ionicons name="bookmark-outline" size={14} color={ACCENT} />
+            <Text style={[styles.saveBtnText, { color: ACCENT }]}>Save trip</Text>
+          </TouchableOpacity>
+        )}
       </View>
+
+      {history.entries.length > 0 && (
+        <View style={[styles.reserveCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm }}>
+            <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Saved Trips</Text>
+            <TouchableOpacity onPress={() => { haptics.warning(); history.clear(); }}>
+              <Text style={[{ color: ACCENT, fontFamily: Fonts.semibold, fontSize: 12 }]}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+          {history.entries.map((entry, idx) => (
+            <TouchableOpacity
+              key={entry.id}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingVertical: 10,
+                borderBottomWidth: idx < history.entries.length - 1 ? 0.5 : 0,
+                borderBottomColor: colors.border,
+              }}
+              onPress={() => {
+                haptics.tap();
+                const v = entry.value;
+                setUnits(v.units);
+                setDistance(v.distance);
+                setMileage(v.mileage);
+                setFuelPrice(v.fuelPrice);
+                setPassengers(v.passengers);
+                setBuffer(v.buffer);
+                setRoundTrip(v.roundTrip);
+              }}
+            >
+              <Text style={[{ color: colors.text, fontFamily: Fonts.semibold, fontSize: 13, flex: 1 }]} numberOfLines={1}>
+                {entry.label}
+              </Text>
+              <Ionicons name="refresh" size={14} color={colors.textMuted} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
     </ScreenShell>
   );
 }
@@ -476,4 +542,16 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       lineHeight: 20,
       fontFamily: Fonts.medium,
     },
+    saveBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      paddingVertical: 8,
+      paddingHorizontal: 14,
+      borderRadius: Radii.pill,
+      marginTop: Spacing.md,
+      alignSelf: 'flex-start',
+    },
+    saveBtnText: { fontSize: 12, fontFamily: Fonts.bold },
   });

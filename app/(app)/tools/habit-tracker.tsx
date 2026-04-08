@@ -16,6 +16,9 @@ import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 import { withAlpha } from '@/lib/color-utils';
 import { KEYS, loadJSON, saveJSON } from '@/lib/storage';
+import { schedule, cancel } from '@/lib/notifications';
+import { haptics } from '@/lib/haptics';
+import EmptyState from '@/components/EmptyState';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const ACCENT = '#8B5CF6';
@@ -269,6 +272,23 @@ export default function HabitTrackerScreen() {
     setModalName('');
   }, []);
 
+  // Schedule a daily 9 AM reminder for the habit. Tools will need an
+  // expo-notifications install before these actually fire — until then the
+  // call is a graceful no-op (see lib/notifications.ts).
+  const scheduleHabitReminder = useCallback(async (habit: Habit) => {
+    const at = new Date();
+    at.setHours(9, 0, 0, 0);
+    await schedule({
+      id: habit.id,
+      namespace: 'habit',
+      title: `Don't break the streak`,
+      body: `Time for: ${habit.name}`,
+      date: at,
+      repeat: 'daily',
+      data: { habitId: habit.id },
+    });
+  }, []);
+
   const saveHabit = useCallback(() => {
     const trimmed = modalName.trim();
     if (!trimmed) {
@@ -277,11 +297,14 @@ export default function HabitTrackerScreen() {
     }
     if (editTarget) {
       // Update existing
-      persistHabits(habits.map(h =>
-        h.id === editTarget.id
-          ? { ...h, name: trimmed, color: modalColor, category: modalCategory }
-          : h,
-      ));
+      const updated: Habit = {
+        ...editTarget,
+        name: trimmed,
+        color: modalColor,
+        category: modalCategory,
+      };
+      persistHabits(habits.map(h => (h.id === editTarget.id ? updated : h)));
+      void scheduleHabitReminder(updated);
     } else {
       // New habit
       const habit: Habit = {
@@ -293,9 +316,11 @@ export default function HabitTrackerScreen() {
         bestStreak: 0,
       };
       persistHabits([...habits, habit]);
+      void scheduleHabitReminder(habit);
     }
+    haptics.success();
     closeModal();
-  }, [modalName, modalColor, modalCategory, editTarget, habits, persistHabits, closeModal]);
+  }, [modalName, modalColor, modalCategory, editTarget, habits, persistHabits, closeModal, scheduleHabitReminder]);
 
   const deleteHabit = useCallback((id: string) => {
     Alert.alert('Delete Habit', 'Remove this habit and all its history?', [
@@ -303,6 +328,7 @@ export default function HabitTrackerScreen() {
       {
         text: 'Delete', style: 'destructive',
         onPress: () => {
+          haptics.warning();
           persistHabits(habits.filter(h => h.id !== id));
           const cleaned: HabitLogs = {};
           for (const [key, ids] of Object.entries(logs)) {
@@ -310,6 +336,7 @@ export default function HabitTrackerScreen() {
             if (filtered.length > 0) cleaned[key] = filtered;
           }
           persistLogs(cleaned);
+          void cancel('habit', id);
         },
       },
     ]);
@@ -779,13 +806,14 @@ export default function HabitTrackerScreen() {
       {filteredHabits.length === 0 && habits.length === 0 ? (
         <>
           {ListHeader}
-          <View style={styles.emptyState}>
-            <Ionicons name="calendar-outline" size={48} color={colors.border} />
-            <Text style={[styles.emptyTitle, { color: colors.textMuted }]}>No habits yet</Text>
-            <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-              Add your first habit to start tracking
-            </Text>
-          </View>
+          <EmptyState
+            icon="trending-up-outline"
+            title="No habits yet"
+            hint="Track up to a dozen habits at once. Each one schedules a daily 9 AM reminder so the streak never breaks."
+            accent={ACCENT}
+            actionLabel="Add habit"
+            onAction={openAddModal}
+          />
         </>
       ) : (
         <FlatList
@@ -794,10 +822,13 @@ export default function HabitTrackerScreen() {
           renderItem={renderHabit}
           ListHeaderComponent={ListHeader}
           ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Ionicons name="filter-outline" size={36} color={colors.border} />
-              <Text style={[styles.emptyText, { color: colors.textMuted }]}>No habits in this category</Text>
-            </View>
+            <EmptyState
+              icon="filter-outline"
+              title="Nothing in this category"
+              hint="Switch the category filter, or add a habit tagged with this one."
+              accent={ACCENT}
+              compact
+            />
           }
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}

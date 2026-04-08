@@ -4,6 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import EmptyState from '@/components/EmptyState';
+import { haptics } from '@/lib/haptics';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 const ACCENT = '#16A34A';
@@ -95,21 +97,41 @@ export default function SavingsGoalScreen() {
   const handleTransaction = () => {
     if (!showTransaction) return;
     const amt = parseFloat(txnAmt);
-    if (!amt || amt <= 0) return;
+    if (!amt || amt <= 0) {
+      haptics.error();
+      return;
+    }
     const { goalId, type } = showTransaction;
+    let goalCompleted = false;
     persist(goals.map(g => {
       if (g.id !== goalId) return g;
       const newSaved = type === 'deposit' ? g.saved + amt : Math.max(0, g.saved - amt);
+      if (type === 'deposit' && g.saved < g.target && newSaved >= g.target) {
+        goalCompleted = true;
+      }
       const txn: Transaction = { id: uid(), amount: amt, date: todayISO(), type };
       return { ...g, saved: newSaved, transactions: [txn, ...(g.transactions ?? [])] };
     }));
+    // Distinct haptic when a deposit puts a goal over the finish line.
+    if (goalCompleted) {
+      haptics.success();
+    } else {
+      haptics.tap();
+    }
     setTxnAmt(''); setShowTransaction(null);
   };
 
   const removeGoal = (id: string) => {
     Alert.alert('Delete Goal', 'Remove this savings goal and all its history?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => persist(goals.filter(g => g.id !== id)) },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          haptics.warning();
+          persist(goals.filter(g => g.id !== id));
+        },
+      },
     ]);
   };
 
@@ -171,11 +193,20 @@ export default function SavingsGoalScreen() {
 
       {/* Goals */}
       {goals.length === 0 ? (
-        <View style={styles.empty}>
-          <Ionicons name="trophy-outline" size={52} color={colors.textMuted} />
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>No savings goals yet</Text>
-          <Text style={[styles.emptyText, { color: colors.textMuted }]}>Start saving toward something special.{'\n'}Tap + to create your first goal!</Text>
-        </View>
+        <EmptyState
+          icon="trophy-outline"
+          title="No savings goals yet"
+          hint="Set a target — emergency fund, vacation, gadget — and log deposits. The hero card shows your overall progress at a glance."
+          accent={ACCENT}
+          actionLabel="Create first goal"
+          onAction={() => {
+            setEditingGoal(null);
+            setName('');
+            setTarget('');
+            setDeadline('');
+            setShowAdd(true);
+          }}
+        />
       ) : (
         goals.map(goal => {
           const progress = Math.min(1, goal.saved / goal.target);

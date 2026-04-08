@@ -4,6 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
+import { useToolHistory } from '@/lib/use-tool-history';
+import { haptics } from '@/lib/haptics';
 
 const ACCENT = '#7C3AED';
 
@@ -44,6 +46,7 @@ export default function LoanComparisonScreen() {
     { id: 1, label: 'Loan A', amount: '1000000', rate: '8.5', years: '20', color: COLORS[0] },
     { id: 2, label: 'Loan B', amount: '1000000', rate: '9.0', years: '15', color: COLORS[1] },
   ]);
+  const history = useToolHistory<Loan[]>('loan-compare', { max: 8 });
 
   const updateLoan = (id: number, field: keyof Loan, value: string) => {
     setLoans(prev => prev.map(l => l.id === id ? { ...l, [field]: value } : l));
@@ -127,12 +130,55 @@ export default function LoanComparisonScreen() {
         </View>
       ))}
 
-      {/* Add Loan Button */}
-      {loans.length < 3 && (
-        <TouchableOpacity style={[styles.addBtn, { borderColor: ACCENT }]} onPress={addLoan}>
-          <Ionicons name="add" size={20} color={ACCENT} />
-          <Text style={[styles.addBtnText, { color: ACCENT }]}>Add Loan</Text>
-        </TouchableOpacity>
+      {/* Add Loan Button + Save current setup */}
+      <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+        {loans.length < 3 && (
+          <TouchableOpacity style={[styles.addBtn, { borderColor: ACCENT, flex: 1 }]} onPress={addLoan}>
+            <Ionicons name="add" size={20} color={ACCENT} />
+            <Text style={[styles.addBtnText, { color: ACCENT }]}>Add Loan</Text>
+          </TouchableOpacity>
+        )}
+        {validResults.length > 0 && (
+          <TouchableOpacity
+            style={[styles.addBtn, { borderColor: ACCENT, flex: 1, backgroundColor: ACCENT + '15' }]}
+            onPress={() => {
+              haptics.success();
+              const summary = loans
+                .map(l => `${l.label} ₹${parseFloat(l.amount || '0').toLocaleString()} @ ${l.rate}%/${l.years}y`)
+                .join(' vs ');
+              history.push(loans, summary);
+            }}
+          >
+            <Ionicons name="bookmark-outline" size={18} color={ACCENT} />
+            <Text style={[styles.addBtnText, { color: ACCENT }]}>Save</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {history.entries.length > 0 && (
+        <View style={[styles.compareCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm }}>
+            <Text style={styles.compareTitle}>Saved Comparisons</Text>
+            <TouchableOpacity onPress={() => { haptics.warning(); history.clear(); }}>
+              <Text style={[{ color: ACCENT, fontFamily: Fonts.semibold, fontSize: 12 }]}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+          {history.entries.map((entry) => (
+            <TouchableOpacity
+              key={entry.id}
+              style={{ paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+              onPress={() => {
+                haptics.tap();
+                setLoans(entry.value);
+              }}
+            >
+              <Ionicons name="refresh" size={14} color={colors.textMuted} />
+              <Text style={[{ color: colors.text, fontFamily: Fonts.semibold, fontSize: 12, flex: 1 }]} numberOfLines={2}>
+                {entry.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       )}
 
       {/* Comparison Table */}

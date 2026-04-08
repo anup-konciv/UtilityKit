@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View, Vibration } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +7,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 import { withAlpha } from '@/lib/color-utils';
+import { haptics } from '@/lib/haptics';
+import { useToolHistory } from '@/lib/use-tool-history';
 
 type BtnVariant = 'num' | 'op' | 'eq' | 'clr' | 'fn';
 type BtnDef = { label: string; value: string; variant: BtnVariant; span?: number };
@@ -75,7 +77,10 @@ export default function BasicCalculatorScreen() {
   const [display, setDisplay] = useState('0');
   const [expression, setExpression] = useState('');
   const [fresh, setFresh] = useState(true);
-  const [history, setHistory] = useState<string[]>([]);
+  // Persisted across launches via useToolHistory. Destructure `push` so the
+  // useCallback below has a stable dep instead of the whole bag.
+  const history = useToolHistory<{ expr: string; result: string }>('basic-calc', { max: 12 });
+  const historyPush = history.push;
 
   const preview = useMemo(() => {
     if (!expression || expression.endsWith('=')) return null;
@@ -86,7 +91,7 @@ export default function BasicCalculatorScreen() {
   }, [display, expression]);
 
   const press = useCallback((value: string) => {
-    Vibration.vibrate(10);
+    haptics.tap();
 
     if (value === 'AC') {
       setDisplay('0');
@@ -117,7 +122,12 @@ export default function BasicCalculatorScreen() {
       const full = `${expression}${display}`;
       const result = safeEval(full);
 
-      setHistory((current) => [`${formatExpression(full)} = ${result}`, ...current].slice(0, 6));
+      if (result !== 'Error') {
+        historyPush({ expr: full, result }, `${formatExpression(full)} = ${result}`);
+        haptics.success();
+      } else {
+        haptics.error();
+      }
       setExpression(`${full}=`);
       setDisplay(result);
       setFresh(true);
@@ -171,7 +181,7 @@ export default function BasicCalculatorScreen() {
     }
 
     setDisplay((current) => (current.length < 15 ? `${current}${value}` : current));
-  }, [display, expression, fresh]);
+  }, [display, expression, fresh, historyPush]);
 
   const variantColor = (variant: BtnVariant) => {
     if (variant === 'eq') return { background: ACCENT, text: '#FFFFFF' };
@@ -195,7 +205,7 @@ export default function BasicCalculatorScreen() {
           <Text style={[styles.headerTitle, { color: colors.text }]}>Calculator</Text>
         </View>
         <View style={[styles.historyBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.historyBadgeText, { color: ACCENT }]}>{history.length}</Text>
+          <Text style={[styles.historyBadgeText, { color: ACCENT }]}>{history.entries.length}</Text>
         </View>
       </View>
 
@@ -228,18 +238,28 @@ export default function BasicCalculatorScreen() {
         {preview ? <Text style={styles.previewText}>Preview: {preview}</Text> : null}
       </LinearGradient>
 
-      {history.length > 0 ? (
+      {history.entries.length > 0 ? (
         <View style={[styles.historyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.historyHeader}>
             <Text style={[styles.historyTitle, { color: colors.textMuted }]}>Recent</Text>
-            <TouchableOpacity onPress={() => setHistory([])}>
+            <TouchableOpacity onPress={() => { haptics.warning(); history.clear(); }}>
               <Text style={[styles.clearText, { color: ACCENT }]}>Clear</Text>
             </TouchableOpacity>
           </View>
-          {history.map((item, index) => (
-            <Text key={`${item}-${index}`} style={[styles.historyItem, { color: colors.text }]}>
-              {item}
-            </Text>
+          {history.entries.map((entry) => (
+            <TouchableOpacity
+              key={entry.id}
+              onPress={() => {
+                // Tap to restore the result as the next operand.
+                haptics.tap();
+                setDisplay(entry.value.result);
+                setExpression('');
+                setFresh(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.historyItem, { color: colors.text }]}>{entry.label}</Text>
+            </TouchableOpacity>
           ))}
         </View>
       ) : null}

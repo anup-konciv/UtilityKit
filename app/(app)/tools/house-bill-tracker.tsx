@@ -7,6 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import { schedule, cancel } from '@/lib/notifications';
+import { haptics } from '@/lib/haptics';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 const ACCENT = '#059669';
@@ -113,35 +115,90 @@ export default function HouseBillTrackerScreen() {
     setShowAdd(true);
   };
 
+  // Schedule a 3-day-before reminder for unpaid bills. Cancels for paid bills.
+  const scheduleBillReminder = useCallback(async (b: Bill) => {
+    if (b.paid) {
+      await cancel('custom', `bill-${b.id}`);
+      return;
+    }
+    const due = new Date(b.dueDate + 'T09:00:00');
+    if (Number.isNaN(due.getTime())) return;
+    const fireAt = new Date(due.getTime() - 3 * 24 * 60 * 60 * 1000);
+    if (fireAt.getTime() <= Date.now()) return;
+    await schedule({
+      id: `bill-${b.id}`,
+      namespace: 'custom',
+      title: `${b.title} due in 3 days`,
+      body: `₹${b.amount.toLocaleString()} due ${b.dueDate}`,
+      date: fireAt,
+      repeat: 'none',
+      data: { billId: b.id },
+    });
+  }, []);
+
   const saveBill = () => {
     const amt = parseFloat(amount);
-    if (!amt || amt <= 0) return;
+    if (!amt || amt <= 0) {
+      haptics.error();
+      return;
+    }
     const cat = getCat(catId);
     const billTitle = title.trim() || cat.label;
+    let next: Bill;
     if (editId) {
-      persist(bills.map(b => b.id === editId ? {
-        ...b, categoryId: catId, title: billTitle, amount: amt, dueDate, recurring, note: note.trim(),
-      } : b));
+      const existing = bills.find(b => b.id === editId);
+      next = {
+        ...(existing as Bill),
+        categoryId: catId,
+        title: billTitle,
+        amount: amt,
+        dueDate,
+        recurring,
+        note: note.trim(),
+      };
+      persist(bills.map(b => (b.id === editId ? next : b)));
     } else {
-      persist([{
-        id: uid(), categoryId: catId, title: billTitle, amount: amt, dueDate,
-        paid: false, paidDate: '', recurring, note: note.trim(),
-      }, ...bills]);
+      next = {
+        id: uid(),
+        categoryId: catId,
+        title: billTitle,
+        amount: amt,
+        dueDate,
+        paid: false,
+        paidDate: '',
+        recurring,
+        note: note.trim(),
+      };
+      persist([next, ...bills]);
     }
+    haptics.success();
+    void scheduleBillReminder(next);
     setShowAdd(false);
   };
 
   const togglePaid = (id: string) => {
-    persist(bills.map(b => {
+    haptics.tap();
+    const updated = bills.map(b => {
       if (b.id !== id) return b;
       return { ...b, paid: !b.paid, paidDate: !b.paid ? todayISO() : '' };
-    }));
+    });
+    persist(updated);
+    const target = updated.find(b => b.id === id);
+    if (target) void scheduleBillReminder(target);
   };
 
   const deleteBill = (id: string) => {
     Alert.alert('Delete Bill', 'Remove this bill?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => persist(bills.filter(b => b.id !== id)) },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          haptics.warning();
+          persist(bills.filter(b => b.id !== id));
+          void cancel('custom', `bill-${id}`);
+        },
+      },
     ]);
   };
 

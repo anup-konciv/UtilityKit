@@ -7,6 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import { schedule, cancel } from '@/lib/notifications';
+import { haptics } from '@/lib/haptics';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 const ACCENT = '#2563EB';
@@ -115,34 +117,85 @@ export default function AssignmentTrackerScreen() {
     setShowAdd(true);
   };
 
+  // Schedule a 1-day-before reminder. Cancels for completed assignments.
+  const scheduleAssignment = useCallback(async (a: Assignment) => {
+    if (a.status === 'completed') {
+      await cancel('custom', `assignment-${a.id}`);
+      return;
+    }
+    const due = new Date(a.dueDate + 'T09:00:00');
+    if (Number.isNaN(due.getTime())) return;
+    const fireAt = new Date(due.getTime() - 24 * 60 * 60 * 1000);
+    if (fireAt.getTime() <= Date.now()) return;
+    await schedule({
+      id: `assignment-${a.id}`,
+      namespace: 'custom',
+      title: `${a.title} due tomorrow`,
+      body: `${a.subject}${a.description ? ` — ${a.description.slice(0, 80)}` : ''}`,
+      date: fireAt,
+      repeat: 'none',
+      data: { assignmentId: a.id },
+    });
+  }, []);
+
   const saveAssignment = () => {
     if (!title.trim()) return;
+    let next: Assignment;
     if (editId) {
-      persist(assignments.map(a => a.id === editId ? {
-        ...a, title: title.trim(), subject, description: desc.trim(), dueDate, priority,
-      } : a));
+      next = {
+        id: editId,
+        title: title.trim(),
+        subject,
+        description: desc.trim(),
+        dueDate,
+        priority,
+        status: assignments.find(a => a.id === editId)?.status ?? 'pending',
+        createdAt: assignments.find(a => a.id === editId)?.createdAt ?? todayISO(),
+      };
+      persist(assignments.map(a => (a.id === editId ? next : a)));
     } else {
-      persist([{
-        id: uid(), title: title.trim(), subject, description: desc.trim(),
-        dueDate, priority, status: 'pending' as Status, createdAt: todayISO(),
-      }, ...assignments]);
+      next = {
+        id: uid(),
+        title: title.trim(),
+        subject,
+        description: desc.trim(),
+        dueDate,
+        priority,
+        status: 'pending' as Status,
+        createdAt: todayISO(),
+      };
+      persist([next, ...assignments]);
     }
+    haptics.success();
+    void scheduleAssignment(next);
     setShowAdd(false);
   };
 
   const cycleStatus = (id: string) => {
     const order: Status[] = ['pending', 'in-progress', 'completed'];
-    persist(assignments.map(a => {
+    haptics.tap();
+    const updated = assignments.map(a => {
       if (a.id !== id) return a;
       const idx = order.indexOf(a.status);
       return { ...a, status: order[(idx + 1) % order.length] };
-    }));
+    });
+    persist(updated);
+    const target = updated.find(a => a.id === id);
+    if (target) void scheduleAssignment(target);
   };
 
   const deleteAssignment = (id: string) => {
     Alert.alert('Delete Assignment', 'Remove this assignment?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => persist(assignments.filter(a => a.id !== id)) },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          haptics.warning();
+          persist(assignments.filter(a => a.id !== id));
+          void cancel('custom', `assignment-${id}`);
+        },
+      },
     ]);
   };
 

@@ -11,6 +11,7 @@ import {
 import { ThemeProvider } from '@/components/ThemeProvider';
 import ThemedStatusBar from '@/components/ThemedStatusBar';
 import { AuthProvider } from '@/context/auth';
+import { configureNotifications } from '@/lib/notifications';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -25,6 +26,12 @@ export default function RootLayout() {
   useEffect(() => {
     if (fontsLoaded) SplashScreen.hideAsync();
   }, [fontsLoaded]);
+
+  // One-time wire-up of the local-notifications layer. No-ops gracefully
+  // when expo-notifications is not yet installed (see lib/notifications.ts).
+  useEffect(() => {
+    void configureNotifications();
+  }, []);
 
   if (!fontsLoaded) return null;
 

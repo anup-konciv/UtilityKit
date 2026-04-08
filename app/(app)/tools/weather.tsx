@@ -14,8 +14,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { loadJSON, saveJSON } from '@/lib/storage';
+import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import { cache } from '@/lib/cache';
+import { getCurrentPosition, reverseGeocode } from '@/lib/location';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
+
+// 30 minutes — Open-Meteo updates ~hourly so this is the right balance
+// between freshness and offline survivability.
+const WEATHER_TTL_MS = 30 * 60 * 1000;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type GeoResult = {
@@ -59,9 +65,6 @@ type SavedLocation = {
   latitude: number;
   longitude: number;
 };
-
-// ── Constants ─────────────────────────────────────────────────────────────────
-const LOC_KEY = 'uk_weather_location';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function weatherInfo(code: number, isNight = false): { label: string; icon: string } {
@@ -134,6 +137,8 @@ function SearchModal({ onSelect, onClose }: { onSelect: (l: SavedLocation) => vo
   const [query, setQuery]     = useState('');
   const [results, setResults] = useState<GeoResult[]>([]);
   const [busy, setBusy]       = useState(false);
+  const [gpsBusy, setGpsBusy] = useState(false);
+  const [gpsError, setGpsError] = useState<string | null>(null);
   const timer                 = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const search = useCallback((q: string) => {
@@ -147,6 +152,32 @@ function SearchModal({ onSelect, onClose }: { onSelect: (l: SavedLocation) => vo
       finally { setBusy(false); }
     }, 380);
   }, []);
+
+  // Tap-to-locate handler. Uses lib/location which gracefully no-ops
+  // until expo-location is installed.
+  const useMyLocation = useCallback(async () => {
+    setGpsBusy(true);
+    setGpsError(null);
+    try {
+      const fix = await getCurrentPosition();
+      if (!fix) {
+        setGpsError('Location unavailable. Install expo-location and grant permission, or search by city name.');
+        return;
+      }
+      const named = await reverseGeocode(fix);
+      onSelect({
+        name: named?.name ?? 'Current location',
+        country: named?.country ?? '',
+        admin1: named?.region,
+        latitude: fix.latitude,
+        longitude: fix.longitude,
+      });
+    } catch {
+      setGpsError('Could not read your location. Try the search instead.');
+    } finally {
+      setGpsBusy(false);
+    }
+  }, [onSelect]);
 
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
@@ -174,6 +205,29 @@ function SearchModal({ onSelect, onClose }: { onSelect: (l: SavedLocation) => vo
             )}
           </View>
         </View>
+
+        {/* Use-my-location pill — no-ops until expo-location is installed. */}
+        <TouchableOpacity
+          style={sm.gpsRow}
+          onPress={useMyLocation}
+          activeOpacity={0.85}
+          disabled={gpsBusy}
+        >
+          <View style={sm.pinWrap}>
+            {gpsBusy ? (
+              <ActivityIndicator size="small" color="#3B82F6" />
+            ) : (
+              <Ionicons name="navigate-circle-outline" size={20} color="#3B82F6" />
+            )}
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={sm.gpsName}>Use my location</Text>
+            <Text style={sm.gpsSub}>
+              {gpsError ?? 'Auto-detect via GPS'}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+        </TouchableOpacity>
 
         {busy && <ActivityIndicator style={{ marginTop: 32 }} color="#3B82F6" />}
 
@@ -221,6 +275,9 @@ const sm = StyleSheet.create({
   pinWrap:  { width: 36, height: 36, borderRadius: Radii.md, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EFF6FF' },
   rowName:  { fontFamily: Fonts.semibold, fontSize: 15, color: '#0B1120' },
   rowSub:   { fontFamily: Fonts.regular, fontSize: 13, color: '#64748B', marginTop: 2 },
+  gpsRow:   { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, gap: Spacing.sm, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  gpsName:  { fontFamily: Fonts.bold, fontSize: 14, color: '#0B1120' },
+  gpsSub:   { fontFamily: Fonts.regular, fontSize: 12, color: '#64748B', marginTop: 2 },
 });
 
 // ── Stat tile ─────────────────────────────────────────────────────────────────
@@ -243,21 +300,47 @@ export default function WeatherScreen() {
   const [showSearch, setShowSearch] = useState(false);
 
   useEffect(() => {
-    loadJSON<SavedLocation | null>(LOC_KEY, null).then((saved) => {
+    loadJSON<SavedLocation | null>(KEYS.weatherLocation, null).then((saved) => {
       if (saved) { setLocation(saved); load(saved); }
     });
   }, []);
 
   const load = useCallback(async (loc: SavedLocation) => {
-    setLoading(true); setError(null);
-    try   { setWeather(await fetchWeather(loc.latitude, loc.longitude)); }
-    catch { setError('Failed to load weather. Check your connection.'); }
-    finally { setLoading(false); }
+    setLoading(true);
+    setError(null);
+    const cacheKey = `weather:${loc.latitude.toFixed(3)},${loc.longitude.toFixed(3)}`;
+
+    // Check the cache first — if it's fresh, paint immediately and skip the
+    // network call entirely. If it's stale we still re-fetch but paint the
+    // cached value first so the screen never goes empty on a flaky network.
+    const cached = await cache.get<WeatherData>(cacheKey, WEATHER_TTL_MS);
+    if (cached?.fresh) {
+      setWeather(cached.value);
+      setLoading(false);
+      return;
+    }
+    if (cached) {
+      setWeather(cached.value);
+    }
+
+    try {
+      const fresh = await fetchWeather(loc.latitude, loc.longitude);
+      setWeather(fresh);
+      void cache.set(cacheKey, fresh);
+    } catch {
+      // Network failed. If we already painted cached data we keep showing it;
+      // otherwise surface an error so the user can retry.
+      if (!cached) {
+        setError('Failed to load weather. Check your connection.');
+      }
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   const pickLocation = useCallback((loc: SavedLocation) => {
     setLocation(loc);
-    saveJSON(LOC_KEY, loc);
+    saveJSON(KEYS.weatherLocation, loc);
     setShowSearch(false);
     load(loc);
   }, [load]);

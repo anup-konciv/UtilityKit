@@ -4,6 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
+import { useToolHistory } from '@/lib/use-tool-history';
+import { haptics } from '@/lib/haptics';
 
 const ACCENT = '#4F46E5';
 
@@ -105,6 +107,11 @@ export default function MatrixCalculatorScreen() {
   const [matB, setMatB] = useState<string[][]>(() => Array.from({ length: 2 }, () => Array(2).fill('')));
   const [op, setOp] = useState<Op>('add');
   const [result, setResult] = useState<Matrix | number | string | null>(null);
+  // Saved matrices — each entry recovers the full state.
+  const history = useToolHistory<{ size: MatSize; matA: string[][]; matB: string[][]; op: Op }>(
+    'matrix-calc',
+    { max: 10 },
+  );
 
   const changeSize = (s: MatSize) => {
     setSize(s);
@@ -126,6 +133,7 @@ export default function MatrixCalculatorScreen() {
   const calculate = () => {
     const a = parseMatrix(matA);
     const b = parseMatrix(matB);
+    haptics.success();
 
     switch (op) {
       case 'add': setResult(addMat(a, b)); break;
@@ -139,6 +147,11 @@ export default function MatrixCalculatorScreen() {
         break;
       }
     }
+  };
+
+  const saveScenario = () => {
+    haptics.success();
+    history.push({ size, matA, matB, op }, `${size}×${size} • ${op}`);
   };
 
   const renderMatrixInput = (label: string, mat: string[][], which: 'A' | 'B') => (
@@ -229,6 +242,54 @@ export default function MatrixCalculatorScreen() {
           ) : (
             renderMatrixResult(result)
           )}
+          <TouchableOpacity
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 6,
+              paddingVertical: 8, paddingHorizontal: 14,
+              borderRadius: Radii.pill, marginTop: Spacing.md,
+              backgroundColor: ACCENT + '20',
+            }}
+            onPress={saveScenario}
+          >
+            <Ionicons name="bookmark-outline" size={14} color={ACCENT} />
+            <Text style={{ color: ACCENT, fontFamily: Fonts.bold, fontSize: 12 }}>Save scenario</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {history.entries.length > 0 && (
+        <View style={[styles.resultCard, { backgroundColor: colors.card, borderColor: colors.border, marginTop: Spacing.md }]}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: Spacing.sm }}>
+            <Text style={styles.resultTitle}>Saved</Text>
+            <TouchableOpacity onPress={() => { haptics.warning(); history.clear(); }}>
+              <Text style={{ color: ACCENT, fontFamily: Fonts.semibold, fontSize: 12 }}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+          {history.entries.map((entry, idx) => (
+            <TouchableOpacity
+              key={entry.id}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 8,
+                paddingVertical: 10, width: '100%',
+                borderBottomWidth: idx < history.entries.length - 1 ? 0.5 : 0,
+                borderBottomColor: colors.border,
+              }}
+              onPress={() => {
+                haptics.tap();
+                const v = entry.value;
+                setSize(v.size);
+                setMatA(v.matA);
+                setMatB(v.matB);
+                setOp(v.op);
+                setResult(null);
+              }}
+            >
+              <Ionicons name="refresh" size={14} color={colors.textMuted} />
+              <Text style={{ color: colors.text, fontFamily: Fonts.semibold, fontSize: 13, flex: 1 }} numberOfLines={1}>
+                {entry.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
       )}
     </ScreenShell>

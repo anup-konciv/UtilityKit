@@ -4,7 +4,6 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  Vibration,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +12,8 @@ import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 import { hexToRgb } from '@/lib/color-utils';
+import { haptics } from '@/lib/haptics';
+import { useToolHistory } from '@/lib/use-tool-history';
 
 type AngleMode = 'deg' | 'rad';
 type ButtonRole = 'digit' | 'operator' | 'function' | 'special' | 'equals';
@@ -286,7 +287,9 @@ export default function ScientificCalculatorScreen() {
   const [lastAnswer, setLastAnswer] = useState('0');
   const [mode, setMode] = useState<AngleMode>('deg');
   const [is2nd, setIs2nd] = useState(false);
-  const [history, setHistory] = useState<HistoryItem[]>([]);
+  // History persisted across launches via useToolHistory.
+  const historyHook = useToolHistory<HistoryItem>('sci-calc', { max: 12 });
+  const history = historyHook.entries;
   const [freshResult, setFreshResult] = useState(false);
 
   const preview = useMemo(() => {
@@ -316,14 +319,16 @@ export default function ScientificCalculatorScreen() {
     setLastAnswer(evaluated.text);
     setExpr(evaluated.text);
     setFreshResult(true);
-    setHistory((current) =>
-      [{ expression: expr, displayExpression: formattedExpression, result: evaluated.text }, ...current].slice(0, 8),
+    historyHook.push(
+      { expression: expr, displayExpression: formattedExpression, result: evaluated.text },
+      `${formattedExpression} = ${evaluated.text}`,
     );
+    haptics.success();
     setIs2nd(false);
   }
 
   function press(token: string) {
-    Vibration.vibrate(10);
+    haptics.tap();
 
     if (token === 'AC') {
       setExpr('');
@@ -468,7 +473,7 @@ export default function ScientificCalculatorScreen() {
             </View>
 
             <TouchableOpacity
-              onPress={() => setHistory([])}
+              onPress={() => { haptics.warning(); historyHook.clear(); }}
               style={[styles.inlineChip, history.length === 0 ? styles.inlineChipDisabled : null]}
               disabled={history.length === 0}
             >
@@ -514,16 +519,16 @@ export default function ScientificCalculatorScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.historyRow}
             >
-              {history.map((item, index) => (
+              {history.map((entry) => (
                 <TouchableOpacity
-                  key={`${item.expression}-${index}`}
-                  onPress={() => restoreHistory(item)}
+                  key={entry.id}
+                  onPress={() => restoreHistory(entry.value)}
                   style={styles.historyChip}
                 >
                   <Text style={styles.historyChipExpr} numberOfLines={1}>
-                    {item.displayExpression}
+                    {entry.value.displayExpression}
                   </Text>
-                  <Text style={styles.historyChipValue}>{item.result}</Text>
+                  <Text style={styles.historyChipValue}>{entry.value.result}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>

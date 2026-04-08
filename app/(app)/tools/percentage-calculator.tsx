@@ -6,6 +6,8 @@ import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 import { withAlpha } from '@/lib/color-utils';
+import { useToolHistory } from '@/lib/use-tool-history';
+import { haptics } from '@/lib/haptics';
 
 const ACCENT = '#F97316';
 
@@ -55,6 +57,7 @@ export default function PercentageCalculatorScreen() {
   const [mode, setMode] = useState<Mode>('of');
   const [a, setA] = useState('15');
   const [b, setB] = useState('240');
+  const history = useToolHistory<{ mode: Mode; a: string; b: string }>('percent-calc', { max: 10 });
 
   const activeMode = MODES.find((item) => item.id === mode) ?? MODES[0];
 
@@ -241,7 +244,52 @@ export default function PercentageCalculatorScreen() {
         {result?.extra ? (
           <Text style={[styles.resultExtra, { color: colors.textMuted }]}>{result.extra}</Text>
         ) : null}
+        {result ? (
+          <TouchableOpacity
+            style={[styles.saveBtn, { backgroundColor: withAlpha(activeMode.colors[0], '20') }]}
+            onPress={() => {
+              haptics.success();
+              history.push({ mode, a, b }, `${result.label} = ${result.value.toFixed(2)}${result.suffix}`);
+            }}
+          >
+            <Ionicons name="bookmark-outline" size={14} color={activeMode.colors[0]} />
+            <Text style={[styles.saveBtnText, { color: activeMode.colors[0] }]}>Save</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
+
+      {history.entries.length > 0 && (
+        <View style={[styles.exampleCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm }}>
+            <Text style={[styles.exampleTitle, { color: colors.textMuted }]}>Saved</Text>
+            <TouchableOpacity onPress={() => { haptics.warning(); history.clear(); }}>
+              <Text style={{ color: ACCENT, fontFamily: Fonts.semibold, fontSize: 12 }}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+          {history.entries.map((entry, idx) => (
+            <TouchableOpacity
+              key={entry.id}
+              style={[
+                styles.exampleRow,
+                idx < history.entries.length - 1
+                  ? { borderBottomWidth: 1, borderBottomColor: colors.border }
+                  : null,
+              ]}
+              onPress={() => {
+                haptics.tap();
+                setMode(entry.value.mode);
+                setA(entry.value.a);
+                setB(entry.value.b);
+              }}
+            >
+              <Text style={[{ color: colors.text, fontFamily: Fonts.semibold, fontSize: 13, flex: 1 }]}>
+                {entry.label}
+              </Text>
+              <Ionicons name="refresh" size={14} color={colors.textMuted} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
 
       <View style={styles.metricRow}>
         <View style={[styles.metricCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -410,6 +458,18 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       fontFamily: Fonts.medium,
       marginTop: 2,
     },
+    saveBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      paddingVertical: 8,
+      paddingHorizontal: 14,
+      borderRadius: Radii.pill,
+      marginTop: Spacing.md,
+      alignSelf: 'flex-start',
+    },
+    saveBtnText: { fontSize: 12, fontFamily: Fonts.bold },
     metricRow: {
       flexDirection: 'row',
       gap: Spacing.md,

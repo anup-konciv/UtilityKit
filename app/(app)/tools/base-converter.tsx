@@ -7,6 +7,8 @@ import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 import { withAlpha } from '@/lib/color-utils';
+import { useToolHistory } from '@/lib/use-tool-history';
+import { haptics } from '@/lib/haptics';
 
 const ACCENT = '#7C3AED';
 
@@ -37,6 +39,7 @@ export default function BaseConverterScreen() {
   const [activeBase, setActiveBase] = useState(2);
   const [inputVal, setInputVal] = useState('255');
   const [copiedLabel, setCopiedLabel] = useState('');
+  const history = useToolHistory<{ activeBase: number; inputVal: string }>('base-conv', { max: 12 });
 
   const active = BASES[activeBase];
 
@@ -232,7 +235,56 @@ export default function BaseConverterScreen() {
             Enter a valid non-negative number to inspect bit length, parity, and ASCII preview.
           </Text>
         )}
+        {decimalValue != null && (
+          <TouchableOpacity
+            style={[styles.factPill, { backgroundColor: withAlpha(ACCENT, '20'), borderColor: withAlpha(ACCENT, '40'), alignSelf: 'flex-start', marginTop: Spacing.md }]}
+            onPress={() => {
+              haptics.success();
+              history.push(
+                { activeBase, inputVal },
+                `${active.prefix}${inputVal} • dec ${decimalValue}`,
+              );
+            }}
+          >
+            <Ionicons name="bookmark-outline" size={14} color={ACCENT} />
+            <Text style={[styles.factText, { color: ACCENT }]}>Save</Text>
+          </TouchableOpacity>
+        )}
       </View>
+
+      {history.entries.length > 0 && (
+        <View style={[styles.analysisCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm }}>
+            <Text style={[styles.sectionTitle, { color: colors.textMuted, marginBottom: 0 }]}>Recent</Text>
+            <TouchableOpacity onPress={() => { haptics.warning(); history.clear(); }}>
+              <Text style={[{ color: ACCENT, fontFamily: Fonts.semibold, fontSize: 12 }]}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+          {history.entries.map((entry, idx) => (
+            <TouchableOpacity
+              key={entry.id}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+                paddingVertical: 10,
+                borderBottomWidth: idx < history.entries.length - 1 ? 0.5 : 0,
+                borderBottomColor: colors.border,
+              }}
+              onPress={() => {
+                haptics.tap();
+                setActiveBase(entry.value.activeBase);
+                setInputVal(entry.value.inputVal);
+              }}
+            >
+              <Ionicons name="refresh" size={14} color={colors.textMuted} />
+              <Text style={[{ color: colors.text, fontFamily: Fonts.semibold, fontSize: 13, flex: 1 }]} numberOfLines={1}>
+                {entry.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
     </ScreenShell>
   );
 }

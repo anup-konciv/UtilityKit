@@ -7,6 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import { schedule, cancel } from '@/lib/notifications';
+import { haptics } from '@/lib/haptics';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 const ACCENT = '#0891B2';
@@ -158,6 +160,25 @@ export default function VehicleServiceScreen() {
     saveJSON(KEYS.vehicleService, s);
   }, []);
 
+  // Schedule a service-due notification 7 days before the next service
+  // is due. Cancels first so re-logging a service moves the notification.
+  const scheduleVehicleReminder = useCallback(async (v: Vehicle) => {
+    await cancel('custom', `vehicle-${v.id}`);
+    const due = getNextDueDate(v);
+    due.setHours(9, 0, 0, 0);
+    const fireAt = new Date(due.getTime() - 7 * 24 * 60 * 60 * 1000);
+    if (fireAt.getTime() <= Date.now()) return;
+    await schedule({
+      id: `vehicle-${v.id}`,
+      namespace: 'custom',
+      title: `${v.name} service due in 1 week`,
+      body: `Last serviced ${v.lastServiceDate}. Book ahead.`,
+      date: fireAt,
+      repeat: 'none',
+      data: { vehicleId: v.id },
+    });
+  }, []);
+
   const detailVehicle = store.vehicles.find(v => v.id === showDetail);
 
   /* ───── Sorted & filtered ───── */
@@ -198,6 +219,8 @@ export default function VehicleServiceScreen() {
       createdAt: todayISO(),
     };
     persist({ vehicles: [...store.vehicles, newV] });
+    haptics.success();
+    void scheduleVehicleReminder(newV);
     resetAddForm();
     setShowAdd(false);
   };
@@ -223,6 +246,9 @@ export default function VehicleServiceScreen() {
         : v
     );
     persist({ vehicles: updated });
+    haptics.success();
+    const target = updated.find(v => v.id === detailVehicle.id);
+    if (target) void scheduleVehicleReminder(target);
     resetLogForm();
     setShowLogService(false);
   };
@@ -245,6 +271,9 @@ export default function VehicleServiceScreen() {
         : v
     );
     persist({ vehicles: updated });
+    haptics.success();
+    const target = updated.find(v => v.id === detailVehicle.id);
+    if (target) void scheduleVehicleReminder(target);
     setEditMode(false);
   };
 
@@ -255,7 +284,9 @@ export default function VehicleServiceScreen() {
       {
         text: 'Delete', style: 'destructive',
         onPress: () => {
+          haptics.warning();
           persist({ vehicles: store.vehicles.filter(v => v.id !== id) });
+          void cancel('custom', `vehicle-${id}`);
           setShowDetail(null);
         },
       },

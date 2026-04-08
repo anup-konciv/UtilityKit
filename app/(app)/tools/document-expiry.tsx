@@ -7,6 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import { schedule, cancel } from '@/lib/notifications';
+import { haptics } from '@/lib/haptics';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 const ACCENT = '#D946EF';
@@ -203,6 +205,25 @@ export default function DocumentExpiryScreen() {
     setFormCategory(preset.category);
   };
 
+  // Schedule a 30-day-before reminder for a document. Cancels first so
+  // editing the date doesn't leave a stale notification behind.
+  const scheduleDocReminder = useCallback(async (doc: Document) => {
+    await cancel('doc-expiry', doc.id);
+    const expiry = new Date(doc.expiryDate + 'T09:00:00');
+    if (Number.isNaN(expiry.getTime())) return;
+    const fireAt = new Date(expiry.getTime() - 30 * 24 * 60 * 60 * 1000);
+    if (fireAt.getTime() <= Date.now()) return;
+    await schedule({
+      id: doc.id,
+      namespace: 'doc-expiry',
+      title: `${doc.name} expires in 30 days`,
+      body: `Renew before ${doc.expiryDate}`,
+      date: fireAt,
+      repeat: 'none',
+      data: { documentId: doc.id },
+    });
+  }, []);
+
   const saveDocument = () => {
     if (!formName.trim() || !formExpiryDate.trim()) return;
     if (editingId) {
@@ -221,6 +242,8 @@ export default function DocumentExpiryScreen() {
           : d
       );
       persist(updated);
+      const editedDoc = updated.find(d => d.id === editingId);
+      if (editedDoc) void scheduleDocReminder(editedDoc);
     } else {
       const newDoc: Document = {
         id: uid(),
@@ -234,7 +257,9 @@ export default function DocumentExpiryScreen() {
         createdAt: todayISO(),
       };
       persist([...documents, newDoc]);
+      void scheduleDocReminder(newDoc);
     }
+    haptics.success();
     setShowAddModal(false);
     resetForm();
   };
@@ -246,7 +271,9 @@ export default function DocumentExpiryScreen() {
         text: 'Delete',
         style: 'destructive',
         onPress: () => {
+          haptics.warning();
           persist(documents.filter(d => d.id !== id));
+          void cancel('doc-expiry', id);
           setShowDetailModal(null);
         },
       },

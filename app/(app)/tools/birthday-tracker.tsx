@@ -16,6 +16,8 @@ import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 import { pickSeededValue, withAlpha } from '@/lib/color-utils';
 import { KEYS, loadJSON, saveJSON } from '@/lib/storage';
+import { schedule, cancel } from '@/lib/notifications';
+import { haptics } from '@/lib/haptics';
 import {
   formatBirthdayLabel,
   formatLongDate,
@@ -340,29 +342,52 @@ export default function BirthdayTrackerScreen() {
       }
     }
 
+    let saved: Birthday;
     if (form.editing) {
+      saved = { ...form.editing, name, day, month, year, note: note || undefined };
       persist(
-        birthdays.map((item) =>
-          item.id === form.editing?.id
-            ? { ...item, name, day, month, year, note: note || undefined }
-            : item,
-        ),
+        birthdays.map((item) => (item.id === form.editing?.id ? saved : item)),
       );
     } else {
-      persist([
-        ...birthdays,
-        {
-          id: generateId(),
-          name,
-          day,
-          month,
-          year,
-          note: note || undefined,
-        },
-      ]);
+      saved = {
+        id: generateId(),
+        name,
+        day,
+        month,
+        year,
+        note: note || undefined,
+      };
+      persist([...birthdays, saved]);
     }
 
+    haptics.success();
+    void scheduleBirthdayReminder(saved);
     closeModal();
+  }
+
+  /**
+   * Schedule a yearly notification at 9 AM on the birthday. We use the
+   * notification layer's "weekly" trigger as the closest available repeat;
+   * the wrapper falls back to a one-shot if not supported. Past dates this
+   * year will skip to next year automatically.
+   */
+  async function scheduleBirthdayReminder(b: Birthday) {
+    const now = new Date();
+    const year = now.getFullYear();
+    let target = new Date(year, b.month - 1, b.day, 9, 0, 0);
+    if (target.getTime() < now.getTime()) {
+      target = new Date(year + 1, b.month - 1, b.day, 9, 0, 0);
+    }
+    if (Number.isNaN(target.getTime())) return;
+    await schedule({
+      id: b.id,
+      namespace: 'birthday',
+      title: `🎂 ${b.name}'s birthday today`,
+      body: b.note ? `Don't forget: ${b.note}` : 'Send a message or call to wish them.',
+      date: target,
+      repeat: 'none',
+      data: { birthdayId: b.id },
+    });
   }
 
   function handleDelete(id: string) {
@@ -371,7 +396,11 @@ export default function BirthdayTrackerScreen() {
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: () => persist(birthdays.filter((item) => item.id !== id)),
+        onPress: () => {
+          haptics.warning();
+          persist(birthdays.filter((item) => item.id !== id));
+          void cancel('birthday', id);
+        },
       },
     ]);
   }

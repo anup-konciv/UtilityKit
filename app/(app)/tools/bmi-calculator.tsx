@@ -11,11 +11,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
-import { loadJSON, saveJSON } from '@/lib/storage';
+import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 const ACCENT = '#06B6D4';
-const BMI_HISTORY_KEY = 'uk_bmi_history';
 
 type Unit = 'metric' | 'imperial';
 type Gender = 'male' | 'female' | 'other';
@@ -243,10 +242,10 @@ export default function BMICalculatorScreen() {
   const [scaleWidth, setScaleWidth] = useState(0);
 
   useEffect(() => {
-    loadJSON<'metric' | 'imperial'>('uk_default_units' as any, 'metric').then((pref) =>
+    loadJSON<'metric' | 'imperial'>(KEYS.defaultUnits, 'metric').then((pref) =>
       setUnit(pref)
     );
-    loadJSON<HistoryEntry[]>(BMI_HISTORY_KEY, []).then((h) => setHistory(h));
+    loadJSON<HistoryEntry[]>(KEYS.bmiHistory, []).then((h) => setHistory(h));
   }, []);
 
   const result = useMemo(() => {
@@ -330,13 +329,13 @@ export default function BMICalculatorScreen() {
     };
     const updated = [entry, ...history].slice(0, 10);
     setHistory(updated);
-    saveJSON(BMI_HISTORY_KEY, updated);
+    saveJSON(KEYS.bmiHistory, updated);
     setSavedToday(true);
   }, [result, history]);
 
   const clearHistory = useCallback(() => {
     setHistory([]);
-    saveJSON(BMI_HISTORY_KEY, []);
+    saveJSON(KEYS.bmiHistory, []);
     setSavedToday(false);
   }, []);
 

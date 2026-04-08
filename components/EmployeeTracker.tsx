@@ -1,0 +1,960 @@
+/**
+ * Shared "salary attendance" tracker.
+ *
+ * Cook, Maid, Driver and Office Boy were each ~600 LOC of duplicated code:
+ * the same Present/Half/Absent calendar, the same effective-days math, the
+ * same payment log + balance UI. This component absorbs the entire scaffold
+ * so each tool file becomes a 5-line wrapper:
+ *
+ *   export default function CookTrackerScreen() {
+ *     return (
+ *       <EmployeeTracker
+ *         storageKey={KEYS.cookTracker}
+ *         defaultName="Cook"
+ *         accent="#D97706"
+ *         placeholderSalary="e.g. 8000"
+ *       />
+ *     );
+ *   }
+ *
+ * Adding a new role (gardener, tutor, …) is now one storage key + one route.
+ * Bug fixes (e.g. month-edge salary math, payment rounding) only need to
+ * land here once.
+ */
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  Modal,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import ScreenShell from '@/components/ScreenShell';
+import { useAppTheme } from '@/components/ThemeProvider';
+import { Fonts, Radii, Spacing } from '@/constants/theme';
+import { withAlpha } from '@/lib/color-utils';
+import { loadJSON, saveJSON } from '@/lib/storage';
+import { haptics } from '@/lib/haptics';
+import EmptyState from '@/components/EmptyState';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+type AttendanceStatus = 'present' | 'absent' | 'half';
+type DayRecord = { date: string; status: AttendanceStatus };
+type PaymentRecord = { id: string; date: string; amount: number; note: string };
+type EmployeeData = {
+  name: string;
+  monthlySalary: number;
+  attendance: DayRecord[];
+  payments: PaymentRecord[];
+};
+
+type Props = {
+  /** AsyncStorage key from `KEYS`. */
+  storageKey: string;
+  /** Default employee name shown until the user edits Settings. */
+  defaultName: string;
+  /** Accent colour for the screen + buttons. */
+  accent: string;
+  /** Placeholder shown in the salary input. */
+  placeholderSalary?: string;
+  /** Override the screen title. Defaults to the saved employee name. */
+  titleOverride?: string;
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const STATUS_CONFIG = {
+  present: { icon: 'checkmark-circle' as const, color: '#10B981', label: 'P' },
+  absent: { icon: 'close-circle' as const, color: '#EF4444', label: 'A' },
+  half: { icon: 'remove-circle' as const, color: '#F59E0B', label: 'H' },
+};
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function getMonthDays(year: number, month: number): string[] {
+  const days: string[] = [];
+  const count = new Date(year, month + 1, 0).getDate();
+  const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+  for (let i = 1; i <= count; i++) days.push(`${prefix}-${String(i).padStart(2, '0')}`);
+  return days;
+}
+
+function getDayName(dateStr: string): string {
+  return WEEKDAYS[new Date(dateStr + 'T00:00:00').getDay()];
+}
+
+function buildCalWeeks(y: number, m: number): (number | null)[][] {
+  const dow = new Date(y, m, 1).getDay();
+  const dim = new Date(y, m + 1, 0).getDate();
+  const flat: (number | null)[] = [];
+  for (let i = 0; i < dow; i++) flat.push(null);
+  for (let d = 1; d <= dim; d++) flat.push(d);
+  while (flat.length % 7 !== 0) flat.push(null);
+  const weeks: (number | null)[][] = [];
+  for (let i = 0; i < flat.length; i += 7) weeks.push(flat.slice(i, i + 7));
+  return weeks;
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+export default function EmployeeTracker({
+  storageKey,
+  defaultName,
+  accent,
+  placeholderSalary = 'e.g. 8000',
+  titleOverride,
+}: Props) {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors, accent), [colors, accent]);
+
+  const [data, setData] = useState<EmployeeData>({
+    name: defaultName,
+    monthlySalary: 0,
+    attendance: [],
+    payments: [],
+  });
+  const [showSettings, setShowSettings] = useState(false);
+  const [showPayment, setShowPayment] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [salaryInput, setSalaryInput] = useState('');
+  const [payAmount, setPayAmount] = useState('');
+  const [payNote, setPayNote] = useState('');
+  const [payDate, setPayDate] = useState(todayISO());
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
+  const [viewMonth, setViewMonth] = useState(() => {
+    const d = new Date();
+    return { year: d.getFullYear(), month: d.getMonth() };
+  });
+
+  useEffect(() => {
+    loadJSON<EmployeeData>(storageKey, {
+      name: defaultName,
+      monthlySalary: 0,
+      attendance: [],
+      payments: [],
+    }).then((d) => {
+      setData(d);
+      setNameInput(d.name);
+      setSalaryInput(d.monthlySalary > 0 ? String(d.monthlySalary) : '');
+    });
+  }, [storageKey, defaultName]);
+
+  const persist = useCallback(
+    (d: EmployeeData) => {
+      setData(d);
+      saveJSON(storageKey, d);
+    },
+    [storageKey]
+  );
+
+  const toggleAttendance = (dateStr: string) => {
+    haptics.tap();
+    const existing = data.attendance.find((a) => a.date === dateStr);
+    let newStatus: AttendanceStatus;
+    if (!existing) newStatus = 'present';
+    else if (existing.status === 'present') newStatus = 'half';
+    else if (existing.status === 'half') newStatus = 'absent';
+    else newStatus = 'present';
+    const filtered = data.attendance.filter((a) => a.date !== dateStr);
+    persist({ ...data, attendance: [...filtered, { date: dateStr, status: newStatus }] });
+  };
+
+  const clearDay = (dateStr: string) => {
+    haptics.warning();
+    persist({ ...data, attendance: data.attendance.filter((a) => a.date !== dateStr) });
+  };
+
+  const saveSettings = () => {
+    persist({
+      ...data,
+      name: nameInput.trim() || defaultName,
+      monthlySalary: parseFloat(salaryInput) || 0,
+    });
+    haptics.success();
+    setShowSettings(false);
+  };
+
+  const addPayment = () => {
+    const amt = parseFloat(payAmount);
+    if (!amt || amt <= 0) {
+      haptics.error();
+      return;
+    }
+    const payment: PaymentRecord = { id: uid(), date: payDate, amount: amt, note: payNote.trim() };
+    persist({
+      ...data,
+      payments: [payment, ...data.payments].sort((a, b) => b.date.localeCompare(a.date)),
+    });
+    haptics.success();
+    setPayAmount('');
+    setPayNote('');
+    setShowPayment(false);
+  };
+
+  const deletePayment = (id: string) => {
+    Alert.alert('Delete Payment', 'Remove this payment record?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          haptics.warning();
+          persist({ ...data, payments: data.payments.filter((p) => p.id !== id) });
+        },
+      },
+    ]);
+  };
+
+  const monthDays = getMonthDays(viewMonth.year, viewMonth.month);
+  const today = todayISO();
+  const monthKey = `${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, '0')}`;
+  const monthAttendance = data.attendance.filter((a) => a.date.startsWith(monthKey));
+  const presentDays = monthAttendance.filter((a) => a.status === 'present').length;
+  const halfDays = monthAttendance.filter((a) => a.status === 'half').length;
+  const absentDays = monthAttendance.filter((a) => a.status === 'absent').length;
+  const effectiveDays = presentDays + halfDays * 0.5;
+  const totalDaysInMonth = monthDays.length;
+  const dailyRate = data.monthlySalary > 0 ? data.monthlySalary / totalDaysInMonth : 0;
+  const monthEarned = dailyRate * effectiveDays;
+  const monthPayments = data.payments.filter((p) => p.date.startsWith(monthKey));
+  const totalPaid = monthPayments.reduce((s, p) => s + p.amount, 0);
+  const balance = monthEarned - totalPaid;
+
+  const prevMonth = () => {
+    haptics.tap();
+    setViewMonth((prev) =>
+      prev.month === 0 ? { year: prev.year - 1, month: 11 } : { ...prev, month: prev.month - 1 }
+    );
+  };
+  const nextMonth = () => {
+    haptics.tap();
+    setViewMonth((prev) =>
+      prev.month === 11 ? { year: prev.year + 1, month: 0 } : { ...prev, month: prev.month + 1 }
+    );
+  };
+
+  const renderCalendar = () => {
+    const calWeeks = buildCalWeeks(viewMonth.year, viewMonth.month);
+    return (
+      <View style={[styles.calCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={styles.sectionTitle}>Attendance</Text>
+        <View style={styles.calLegendRow}>
+          {(['present', 'half', 'absent'] as const).map((k) => (
+            <View key={k} style={styles.legendItemCal}>
+              <View style={[styles.legendDotCal, { backgroundColor: STATUS_CONFIG[k].color }]} />
+              <Text style={[styles.legendTextCal, { color: colors.textMuted }]}>
+                {k === 'present' ? 'Present' : k === 'half' ? 'Half Day' : 'Absent'}
+              </Text>
+            </View>
+          ))}
+        </View>
+        <View style={styles.weekRow}>
+          {WEEKDAYS.map((w) => (
+            <View key={w} style={styles.weekCell}>
+              <Text style={[styles.weekText, { color: w === 'Sun' ? '#EF4444' : colors.textMuted }]}>
+                {w}
+              </Text>
+            </View>
+          ))}
+        </View>
+        {calWeeks.map((week, wi) => (
+          <View key={wi} style={styles.calRow}>
+            {week.map((d, di) => {
+              if (d === null) return <View key={`empty-${wi}-${di}`} style={styles.calCellWrap} />;
+              const dateStr = `${monthKey}-${String(d).padStart(2, '0')}`;
+              const record = data.attendance.find((a) => a.date === dateStr);
+              const isToday = dateStr === today;
+              const isFuture = dateStr > today;
+              const statusCfg = record ? STATUS_CONFIG[record.status] : null;
+              return (
+                <TouchableOpacity
+                  key={dateStr}
+                  style={[
+                    styles.calCellWrap,
+                    statusCfg && {
+                      borderWidth: 1.5,
+                      borderColor: statusCfg.color,
+                      backgroundColor: withAlpha(statusCfg.color, '20'),
+                      borderRadius: Radii.md,
+                    },
+                    isFuture && { opacity: 0.35 },
+                  ]}
+                  onPress={() => !isFuture && toggleAttendance(dateStr)}
+                  onLongPress={() => !isFuture && record && clearDay(dateStr)}
+                  disabled={isFuture}
+                >
+                  <Text style={[styles.calDayNum, { color: colors.text }]}>{d}</Text>
+                  {statusCfg && (
+                    <Text style={[styles.calDayLabel, { color: statusCfg.color }]}>
+                      {statusCfg.label}
+                    </Text>
+                  )}
+                  {isToday && <View style={[styles.todayDotCal, { backgroundColor: accent }]} />}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ))}
+      </View>
+    );
+  };
+
+  const renderList = () => (
+    <View style={[styles.calCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Text style={styles.sectionTitle}>Attendance</Text>
+      <View style={styles.legend}>
+        {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+          <View key={key} style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: cfg.color }]} />
+            <Text style={[styles.legendText, { color: colors.textMuted }]}>
+              {key.charAt(0).toUpperCase() + key.slice(1)}
+            </Text>
+          </View>
+        ))}
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: colors.border }]} />
+          <Text style={[styles.legendText, { color: colors.textMuted }]}>Unmarked</Text>
+        </View>
+      </View>
+      {monthDays.map((dateStr) => {
+        const record = data.attendance.find((a) => a.date === dateStr);
+        const isToday = dateStr === today;
+        const isFuture = dateStr > today;
+        const day = parseInt(dateStr.slice(8), 10);
+        const dayName = getDayName(dateStr);
+        const isSunday = dayName === 'Sun';
+        return (
+          <TouchableOpacity
+            key={dateStr}
+            style={[
+              styles.dayRow,
+              { borderBottomColor: colors.border },
+              isToday && { backgroundColor: withAlpha(accent, '10') },
+            ]}
+            onPress={() => !isFuture && toggleAttendance(dateStr)}
+            onLongPress={() => !isFuture && record && clearDay(dateStr)}
+            disabled={isFuture}
+          >
+            <View style={styles.dayLeft}>
+              <Text
+                style={[
+                  styles.dayNum,
+                  { color: isSunday ? '#EF4444' : colors.text },
+                  isFuture && { opacity: 0.4 },
+                ]}
+              >
+                {day}
+              </Text>
+              <Text
+                style={[
+                  styles.dayName,
+                  { color: isSunday ? '#EF4444' : colors.textMuted },
+                  isFuture && { opacity: 0.4 },
+                ]}
+              >
+                {dayName}
+              </Text>
+            </View>
+            {isToday && (
+              <View style={[styles.todayBadge, { backgroundColor: accent }]}>
+                <Text style={styles.todayText}>Today</Text>
+              </View>
+            )}
+            <View style={styles.dayRight}>
+              {record ? (
+                <View
+                  style={[
+                    styles.statusBadge,
+                    { backgroundColor: withAlpha(STATUS_CONFIG[record.status].color, '20') },
+                  ]}
+                >
+                  <Ionicons
+                    name={STATUS_CONFIG[record.status].icon}
+                    size={16}
+                    color={STATUS_CONFIG[record.status].color}
+                  />
+                  <Text
+                    style={[styles.statusText, { color: STATUS_CONFIG[record.status].color }]}
+                  >
+                    {STATUS_CONFIG[record.status].label}
+                  </Text>
+                </View>
+              ) : isFuture ? (
+                <Text style={[styles.unmarked, { color: colors.border }]}>—</Text>
+              ) : (
+                <Text style={[styles.unmarked, { color: colors.textMuted }]}>Tap</Text>
+              )}
+            </View>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+
+  return (
+    <ScreenShell
+      title={titleOverride ?? data.name}
+      accentColor={accent}
+      rightAction={
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          <TouchableOpacity
+            onPress={() => {
+              setPayAmount('');
+              setPayNote('');
+              setPayDate(todayISO());
+              setShowPayment(true);
+            }}
+          >
+            <Ionicons name="cash-outline" size={24} color={accent} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              setNameInput(data.name);
+              setSalaryInput(data.monthlySalary > 0 ? String(data.monthlySalary) : '');
+              setShowSettings(true);
+            }}
+          >
+            <Ionicons name="settings-outline" size={24} color={accent} />
+          </TouchableOpacity>
+        </View>
+      }
+    >
+      {/* Month Navigator */}
+      <View style={styles.monthNav}>
+        <TouchableOpacity onPress={prevMonth}>
+          <Ionicons name="chevron-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={[styles.monthLabel, { color: colors.text }]}>
+          {MONTHS[viewMonth.month]} {viewMonth.year}
+        </Text>
+        <TouchableOpacity onPress={nextMonth}>
+          <Ionicons name="chevron-forward" size={24} color={colors.text} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Summary Card */}
+      <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.summaryGrid}>
+          <View style={styles.summaryItem}>
+            <Text style={[styles.summaryVal, { color: '#10B981' }]}>{presentDays}</Text>
+            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Present</Text>
+          </View>
+          <View style={styles.summaryItem}>
+            <Text style={[styles.summaryVal, { color: '#F59E0B' }]}>{halfDays}</Text>
+            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Half Day</Text>
+          </View>
+          <View style={styles.summaryItem}>
+            <Text style={[styles.summaryVal, { color: '#EF4444' }]}>{absentDays}</Text>
+            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Absent</Text>
+          </View>
+          <View style={styles.summaryItem}>
+            <Text style={[styles.summaryVal, { color: accent }]}>{effectiveDays}</Text>
+            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Effective</Text>
+          </View>
+        </View>
+
+        {data.monthlySalary > 0 && (
+          <>
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <View style={styles.financeRow}>
+              <View style={styles.financeItem}>
+                <Text style={[styles.financeLabel, { color: colors.textMuted }]}>Earned</Text>
+                <Text style={[styles.financeVal, { color: '#10B981' }]}>
+                  {monthEarned.toFixed(0)}
+                </Text>
+              </View>
+              <View style={styles.financeItem}>
+                <Text style={[styles.financeLabel, { color: colors.textMuted }]}>Paid</Text>
+                <Text style={[styles.financeVal, { color: '#3B82F6' }]}>
+                  {totalPaid.toFixed(0)}
+                </Text>
+              </View>
+              <View style={styles.financeItem}>
+                <Text style={[styles.financeLabel, { color: colors.textMuted }]}>Balance</Text>
+                <Text
+                  style={[
+                    styles.financeVal,
+                    { color: balance >= 0 ? '#EF4444' : '#10B981' },
+                  ]}
+                >
+                  {balance >= 0
+                    ? `${balance.toFixed(0)} due`
+                    : `${Math.abs(balance).toFixed(0)} extra`}
+                </Text>
+              </View>
+            </View>
+          </>
+        )}
+      </View>
+
+      {data.monthlySalary === 0 && (
+        <EmptyState
+          icon="briefcase-outline"
+          title={`Set ${defaultName.toLowerCase()} salary`}
+          hint="Tap the gear icon above to enter the monthly salary. The daily rate, earned amount and balance will then update automatically as you mark attendance."
+          accent={accent}
+          actionLabel="Open Settings"
+          onAction={() => {
+            setNameInput(data.name);
+            setSalaryInput('');
+            setShowSettings(true);
+          }}
+          compact
+        />
+      )}
+
+      {/* View Toggle */}
+      <View style={[styles.viewToggle, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        {[
+          { k: 'list' as const, ic: 'list-outline', lb: 'List' },
+          { k: 'calendar' as const, ic: 'calendar-outline', lb: 'Calendar' },
+        ].map((v) => (
+          <TouchableOpacity
+            key={v.k}
+            style={[styles.viewBtn, viewMode === v.k && { backgroundColor: accent }]}
+            onPress={() => {
+              haptics.selection();
+              setViewMode(v.k);
+            }}
+          >
+            <Ionicons
+              name={v.ic as any}
+              size={15}
+              color={viewMode === v.k ? '#fff' : colors.textMuted}
+            />
+            <Text
+              style={[
+                styles.viewBtnText,
+                { color: viewMode === v.k ? '#fff' : colors.textMuted },
+              ]}
+            >
+              {v.lb}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {viewMode === 'calendar' ? renderCalendar() : renderList()}
+
+      {/* Payment History */}
+      {data.payments.length > 0 && (
+        <View style={[styles.payCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={styles.sectionTitle}>Payment History</Text>
+          {data.payments.slice(0, 20).map((p) => (
+            <View key={p.id} style={[styles.payRow, { borderBottomColor: colors.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.payDate, { color: colors.text }]}>{p.date}</Text>
+                {p.note ? (
+                  <Text style={[styles.payNote, { color: colors.textMuted }]}>{p.note}</Text>
+                ) : null}
+              </View>
+              <Text style={[styles.payAmt, { color: '#10B981' }]}>
+                {p.amount.toLocaleString()}
+              </Text>
+              <TouchableOpacity onPress={() => deletePayment(p.id)} style={{ marginLeft: 8 }}>
+                <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* Settings Modal */}
+      <Modal
+        visible={showSettings}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowSettings(false)}
+      >
+        <View style={styles.modalBg}>
+          <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>{defaultName} Settings</Text>
+            <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Name</Text>
+            <TextInput
+              style={[
+                styles.modalInput,
+                { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text },
+              ]}
+              value={nameInput}
+              onChangeText={setNameInput}
+              placeholder={`${defaultName} name`}
+              placeholderTextColor={colors.textMuted}
+              autoFocus
+            />
+            <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Monthly Salary</Text>
+            <TextInput
+              style={[
+                styles.modalInput,
+                { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text },
+              ]}
+              value={salaryInput}
+              onChangeText={setSalaryInput}
+              placeholder={placeholderSalary}
+              placeholderTextColor={colors.textMuted}
+              keyboardType="numeric"
+            />
+            <View style={styles.modalBtns}>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: colors.surface }]}
+                onPress={() => setShowSettings(false)}
+              >
+                <Text style={[styles.modalBtnText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: accent }]}
+                onPress={saveSettings}
+              >
+                <Text style={[styles.modalBtnText, { color: '#fff' }]}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Payment Modal */}
+      <Modal
+        visible={showPayment}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPayment(false)}
+      >
+        <View style={styles.modalBg}>
+          <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Record Payment</Text>
+
+            <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Date</Text>
+            <View style={styles.datePickerWrap}>
+              <TouchableOpacity
+                style={styles.dateArrow}
+                onPress={() => {
+                  const d = new Date(payDate + 'T00:00:00');
+                  d.setDate(d.getDate() - 1);
+                  setPayDate(
+                    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                  );
+                }}
+              >
+                <Ionicons name="chevron-back" size={20} color={colors.text} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.dateDisplay,
+                  { backgroundColor: colors.inputBg, borderColor: colors.border },
+                ]}
+                onPress={() => setPayDate(todayISO())}
+              >
+                <Ionicons name="calendar-outline" size={16} color={accent} />
+                <Text style={[styles.dateText, { color: colors.text }]}>{payDate}</Text>
+                {payDate === todayISO() && (
+                  <Text style={[styles.todayTag, { color: accent }]}>Today</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.dateArrow}
+                onPress={() => {
+                  const d = new Date(payDate + 'T00:00:00');
+                  d.setDate(d.getDate() + 1);
+                  setPayDate(
+                    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                  );
+                }}
+              >
+                <Ionicons name="chevron-forward" size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.dateBtnsRow}>
+              {(() => {
+                const btns: { label: string; date: string }[] = [];
+                const d = new Date();
+                btns.push({ label: 'Today', date: todayISO() });
+                d.setDate(d.getDate() - 1);
+                btns.push({
+                  label: 'Yesterday',
+                  date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+                });
+                const now = new Date();
+                btns.push({
+                  label: `1st ${MONTHS[now.getMonth()]}`,
+                  date: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`,
+                });
+                return btns;
+              })().map((b) => (
+                <TouchableOpacity
+                  key={b.label}
+                  style={[
+                    styles.dateQuickBtn,
+                    payDate === b.date && {
+                      backgroundColor: withAlpha(accent, '20'),
+                      borderColor: accent,
+                    },
+                  ]}
+                  onPress={() => setPayDate(b.date)}
+                >
+                  <Text
+                    style={[
+                      styles.dateQuickText,
+                      { color: payDate === b.date ? accent : colors.textMuted },
+                    ]}
+                  >
+                    {b.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Amount</Text>
+            <TextInput
+              style={[
+                styles.modalInput,
+                { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text },
+              ]}
+              value={payAmount}
+              onChangeText={setPayAmount}
+              placeholder="Amount paid"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="numeric"
+            />
+            <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Note</Text>
+            <TextInput
+              style={[
+                styles.modalInput,
+                { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text },
+              ]}
+              value={payNote}
+              onChangeText={setPayNote}
+              placeholder="Note (optional)"
+              placeholderTextColor={colors.textMuted}
+            />
+            {data.monthlySalary > 0 && (
+              <View style={styles.quickRow}>
+                {[data.monthlySalary, Math.round(data.monthlySalary / 2), 500, 1000].map((a) => (
+                  <TouchableOpacity
+                    key={a}
+                    style={[styles.quickBtn, { backgroundColor: withAlpha(accent, '15') }]}
+                    onPress={() => setPayAmount(String(a))}
+                  >
+                    <Text style={[styles.quickText, { color: accent }]}>{a}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            <View style={styles.modalBtns}>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: colors.surface }]}
+                onPress={() => setShowPayment(false)}
+              >
+                <Text style={[styles.modalBtnText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: accent }]}
+                onPress={addPayment}
+              >
+                <Text style={[styles.modalBtnText, { color: '#fff' }]}>Add Payment</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </ScreenShell>
+  );
+}
+
+const createStyles = (c: ReturnType<typeof useAppTheme>['colors'], accent: string) =>
+  StyleSheet.create({
+    monthNav: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: Spacing.lg,
+    },
+    monthLabel: { fontSize: 18, fontFamily: Fonts.bold },
+    summaryCard: {
+      borderRadius: Radii.xl,
+      borderWidth: 1,
+      padding: Spacing.lg,
+      marginBottom: Spacing.lg,
+    },
+    summaryGrid: { flexDirection: 'row', justifyContent: 'space-around' },
+    summaryItem: { alignItems: 'center' },
+    summaryVal: { fontSize: 24, fontFamily: Fonts.bold },
+    summaryLabel: { fontSize: 10, fontFamily: Fonts.medium, marginTop: 2 },
+    divider: { height: 1, marginVertical: Spacing.md },
+    financeRow: { flexDirection: 'row', justifyContent: 'space-around' },
+    financeItem: { alignItems: 'center' },
+    financeLabel: { fontSize: 10, fontFamily: Fonts.medium },
+    financeVal: { fontSize: 16, fontFamily: Fonts.bold, marginTop: 2 },
+    calCard: {
+      borderRadius: Radii.xl,
+      borderWidth: 1,
+      padding: Spacing.md,
+      marginBottom: Spacing.lg,
+    },
+    sectionTitle: {
+      fontSize: 11,
+      fontFamily: Fonts.bold,
+      color: c.textMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+      marginBottom: Spacing.md,
+      paddingHorizontal: Spacing.sm,
+    },
+    legend: {
+      flexDirection: 'row',
+      gap: Spacing.md,
+      marginBottom: Spacing.md,
+      paddingHorizontal: Spacing.sm,
+      flexWrap: 'wrap',
+    },
+    legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    legendDot: { width: 8, height: 8, borderRadius: 4 },
+    legendText: { fontSize: 10, fontFamily: Fonts.medium },
+    dayRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 10,
+      paddingHorizontal: Spacing.sm,
+      borderBottomWidth: 0.5,
+    },
+    dayLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, width: 60 },
+    dayNum: { fontSize: 15, fontFamily: Fonts.bold, width: 24, textAlign: 'right' },
+    dayName: { fontSize: 11, fontFamily: Fonts.medium },
+    todayBadge: {
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: Radii.pill,
+      marginRight: 'auto',
+      marginLeft: 8,
+    },
+    todayText: { fontSize: 9, fontFamily: Fonts.bold, color: '#fff' },
+    dayRight: { marginLeft: 'auto' },
+    statusBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: Radii.pill,
+    },
+    statusText: { fontSize: 12, fontFamily: Fonts.bold },
+    unmarked: { fontSize: 12, fontFamily: Fonts.medium },
+    payCard: {
+      borderRadius: Radii.xl,
+      borderWidth: 1,
+      padding: Spacing.lg,
+      marginBottom: Spacing.lg,
+    },
+    payRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 10,
+      borderBottomWidth: 0.5,
+    },
+    payDate: { fontSize: 13, fontFamily: Fonts.semibold },
+    payNote: { fontSize: 11, fontFamily: Fonts.regular, marginTop: 1 },
+    payAmt: { fontSize: 16, fontFamily: Fonts.bold },
+    quickRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md },
+    quickBtn: { flex: 1, paddingVertical: 8, borderRadius: Radii.md, alignItems: 'center' },
+    quickText: { fontSize: 13, fontFamily: Fonts.bold },
+    fieldLabel: {
+      fontSize: 11,
+      fontFamily: Fonts.bold,
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+      marginBottom: 4,
+    },
+    datePickerWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      marginBottom: Spacing.sm,
+    },
+    dateArrow: { padding: 6 },
+    dateDisplay: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      borderWidth: 1.5,
+      borderRadius: Radii.md,
+      paddingVertical: 12,
+    },
+    dateText: { fontSize: 15, fontFamily: Fonts.bold },
+    todayTag: { fontSize: 10, fontFamily: Fonts.bold },
+    dateBtnsRow: { flexDirection: 'row', gap: 6, marginBottom: Spacing.lg },
+    dateQuickBtn: {
+      flex: 1,
+      paddingVertical: 6,
+      borderRadius: Radii.pill,
+      borderWidth: 1,
+      borderColor: c.border,
+      alignItems: 'center',
+    },
+    dateQuickText: { fontSize: 11, fontFamily: Fonts.semibold },
+    modalBg: {
+      flex: 1,
+      backgroundColor: '#00000066',
+      justifyContent: 'center',
+      padding: Spacing.xl,
+    },
+    modalCard: { borderRadius: Radii.xl, padding: Spacing.xl },
+    modalTitle: { fontSize: 18, fontFamily: Fonts.bold, marginBottom: Spacing.lg },
+    modalInput: {
+      borderWidth: 1.5,
+      borderRadius: Radii.md,
+      padding: Spacing.md,
+      fontSize: 15,
+      fontFamily: Fonts.regular,
+      marginBottom: Spacing.md,
+    },
+    modalBtns: { flexDirection: 'row', gap: Spacing.md },
+    modalBtn: { flex: 1, paddingVertical: 12, borderRadius: Radii.md, alignItems: 'center' },
+    modalBtnText: { fontSize: 15, fontFamily: Fonts.bold },
+    viewToggle: {
+      flexDirection: 'row',
+      borderRadius: Radii.lg,
+      borderWidth: 1,
+      padding: 3,
+      gap: 3,
+      marginBottom: Spacing.md,
+    },
+    viewBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 5,
+      paddingVertical: 8,
+      borderRadius: Radii.md,
+    },
+    viewBtnText: { fontSize: 13, fontFamily: Fonts.semibold },
+    weekRow: { flexDirection: 'row', marginBottom: 4 },
+    weekCell: { flex: 1, alignItems: 'center', paddingVertical: 6 },
+    weekText: { fontSize: 11, fontFamily: Fonts.semibold },
+    calRow: { flexDirection: 'row' },
+    calCellWrap: { flex: 1, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
+    calDayNum: { fontSize: 14, fontFamily: Fonts.bold },
+    calDayLabel: { fontSize: 9, fontFamily: Fonts.bold, marginTop: 1 },
+    todayDotCal: { width: 4, height: 4, borderRadius: 2, marginTop: 2 },
+    calLegendRow: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: Spacing.lg,
+      marginBottom: Spacing.lg,
+    },
+    legendItemCal: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    legendDotCal: { width: 8, height: 8, borderRadius: 4 },
+    legendTextCal: { fontSize: 11, fontFamily: Fonts.medium },
+  });

@@ -5,6 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
+import { useToolHistory } from '@/lib/use-tool-history';
+import { haptics } from '@/lib/haptics';
 
 const ACCENT = '#0EA5E9';
 
@@ -51,6 +53,8 @@ export default function JsonFormatterScreen() {
   const [output, setOutput] = useState('');
   const [indentSize, setIndentSize] = useState(2);
   const [copied, setCopied] = useState(false);
+  // Persisted snippets the user wants to come back to.
+  const history = useToolHistory<{ input: string }>('json-formatter', { max: 10 });
 
   const analysis = useMemo(() => analyzeJSON(input), [input]);
 
@@ -191,7 +195,7 @@ export default function JsonFormatterScreen() {
       <View style={styles.actionRow}>
         <TouchableOpacity
           style={[styles.actionBtn, { backgroundColor: analysis.valid ? ACCENT : colors.surface, borderColor: analysis.valid ? ACCENT : colors.border }]}
-          onPress={format}
+          onPress={() => { format(); haptics.success(); }}
           disabled={!analysis.valid}
         >
           <Ionicons name="code-outline" size={18} color={analysis.valid ? '#fff' : colors.textMuted} />
@@ -199,7 +203,7 @@ export default function JsonFormatterScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.actionBtn, { backgroundColor: analysis.valid ? '#F97316' : colors.surface, borderColor: analysis.valid ? '#F97316' : colors.border }]}
-          onPress={minify}
+          onPress={() => { minify(); haptics.success(); }}
           disabled={!analysis.valid}
         >
           <Ionicons name="contract-outline" size={18} color={analysis.valid ? '#fff' : colors.textMuted} />
@@ -207,13 +211,60 @@ export default function JsonFormatterScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.actionBtn, { backgroundColor: analysis.valid ? '#8B5CF6' : colors.surface, borderColor: analysis.valid ? '#8B5CF6' : colors.border }]}
-          onPress={sortKeys}
+          onPress={() => { sortKeys(); haptics.success(); }}
           disabled={!analysis.valid}
         >
           <Ionicons name="swap-vertical-outline" size={18} color={analysis.valid ? '#fff' : colors.textMuted} />
           <Text style={[styles.actionBtnText, { color: analysis.valid ? '#fff' : colors.textMuted }]}>Sort</Text>
         </TouchableOpacity>
+        {analysis.valid && (
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: '#10B981', borderColor: '#10B981' }]}
+            onPress={() => {
+              haptics.success();
+              const preview = input.replace(/\s+/g, ' ').slice(0, 60);
+              history.push({ input }, `${analysis.stats?.type ?? 'JSON'} • ${analysis.stats?.keys ?? 0} keys • ${preview}…`);
+            }}
+          >
+            <Ionicons name="bookmark-outline" size={18} color="#fff" />
+            <Text style={[styles.actionBtnText, { color: '#fff' }]}>Save</Text>
+          </TouchableOpacity>
+        )}
       </View>
+
+      {history.entries.length > 0 && (
+        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.secHeader}>
+            <Text style={styles.secTitle}>Saved Snippets</Text>
+            <TouchableOpacity onPress={() => { haptics.warning(); history.clear(); }}>
+              <Text style={[{ color: ACCENT, fontFamily: Fonts.semibold, fontSize: 12 }]}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+          {history.entries.map((entry, idx) => (
+            <TouchableOpacity
+              key={entry.id}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+                paddingVertical: 10,
+                borderBottomWidth: idx < history.entries.length - 1 ? 0.5 : 0,
+                borderBottomColor: colors.border,
+              }}
+              onPress={() => {
+                haptics.tap();
+                setInput(entry.value.input);
+                setOutput('');
+              }}
+            >
+              <Ionicons name="refresh" size={14} color={colors.textMuted} />
+              <Text style={[{ color: colors.text, fontFamily: Fonts.semibold, fontSize: 12, flex: 1 }]} numberOfLines={2}>
+                {entry.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
 
       {/* Output */}
       {!!output && (

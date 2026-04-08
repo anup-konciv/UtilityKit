@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import EmptyState from '@/components/EmptyState';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 const ACCENT = '#8B5CF6';
@@ -229,11 +230,14 @@ export default function RoutineTrackerScreen() {
 
       {/* Routines */}
       {routines.length === 0 ? (
-        <View style={styles.emptyWrap}>
-          <Ionicons name="time-outline" size={48} color={colors.border} />
-          <Text style={[styles.emptyText, { color: colors.textMuted }]}>No routines yet</Text>
-          <Text style={[styles.emptyHint, { color: colors.textMuted }]}>Tap + to create your first routine</Text>
-        </View>
+        <EmptyState
+          icon="time-outline"
+          title="No routines yet"
+          hint="Group recurring tasks like Morning routine or Workout into a single checklist with streak tracking."
+          accent={ACCENT}
+          actionLabel="Create routine"
+          onAction={() => openAdd()}
+        />
       ) : routines.map(routine => {
         const daySteps = logs[selectedDate]?.[routine.id] ?? [];
         const doneCount = daySteps.filter(Boolean).length;

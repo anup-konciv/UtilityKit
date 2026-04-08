@@ -6,10 +6,9 @@ import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 import { withAlpha } from '@/lib/color-utils';
-import { loadJSON, saveJSON } from '@/lib/storage';
+import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
 
 const ACCENT = '#3B82F6';
-const STORAGE_KEY = 'uk_world_clocks';
 
 type DisplayMode = 'digital' | 'watch';
 type TimezoneEntry = { city: string; country: string; timeZone: string; fallbackOffset: number; isCapital?: boolean };
@@ -161,10 +160,10 @@ export default function WorldClockScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [displayMode, setDisplayMode] = useState<DisplayMode>('digital');
 
-  useEffect(() => { loadJSON<string[]>(STORAGE_KEY, []).then((stored) => setSavedCities(Array.isArray(stored) ? stored : [])); }, []);
+  useEffect(() => { loadJSON<string[]>(KEYS.worldClocks, []).then((stored) => setSavedCities(Array.isArray(stored) ? stored : [])); }, []);
   useEffect(() => { const timer = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(timer); }, []);
 
-  const persist = useCallback((cities: string[]) => { setSavedCities(cities); saveJSON(STORAGE_KEY, cities); }, []);
+  const persist = useCallback((cities: string[]) => { setSavedCities(cities); saveJSON(KEYS.worldClocks, cities); }, []);
   const addCity = useCallback((city: string) => { if (!savedCities.includes(city)) persist([...savedCities, city]); setSearchText(''); setModalVisible(false); }, [persist, savedCities]);
   const removeCity = useCallback((city: string) => persist(savedCities.filter((item) => item !== city)), [persist, savedCities]);
 

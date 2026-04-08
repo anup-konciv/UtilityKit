@@ -7,6 +7,9 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import { schedule, cancel, type RepeatMode as NotifRepeatMode } from '@/lib/notifications';
+import { haptics } from '@/lib/haptics';
+import EmptyState from '@/components/EmptyState';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 const ACCENT = '#A855F7';
@@ -478,16 +481,50 @@ export default function ReminderScreen() {
     saveJSON(KEYS.reminders, next);
   }, []);
 
+  // Convert this tool's repeat enum to the notifications layer's enum.
+  // Monthly isn't supported by expo-notifications calendar triggers — we
+  // schedule it as a one-shot and let the user re-arm next month.
+  const toNotifRepeat = (r: RepeatMode): NotifRepeatMode =>
+    r === 'daily' ? 'daily' : r === 'weekly' ? 'weekly' : 'none';
+
+  const scheduleForReminder = useCallback(async (r: Reminder) => {
+    if (r.done) {
+      await cancel('reminder', r.id);
+      return;
+    }
+    const fireDate = dtToDate(r.datetime);
+    if (Number.isNaN(fireDate.getTime())) return;
+    await schedule({
+      id: r.id,
+      namespace: 'reminder',
+      title: r.title || 'Reminder',
+      body: r.note || undefined,
+      date: fireDate,
+      repeat: toNotifRepeat(r.repeat),
+      data: { reminderId: r.id, priority: r.priority },
+    });
+  }, []);
+
   const handleSave = (r: Reminder) => {
     const exists = reminders.some(x => x.id === r.id);
     persist(exists ? reminders.map(x => x.id === r.id ? r : x) : [r, ...reminders]);
+    haptics.success();
+    void scheduleForReminder(r);
     setSheet({ visible: false, editing: null });
   };
 
-  const handleDelete = (id: string) => persist(reminders.filter(r => r.id !== id));
+  const handleDelete = (id: string) => {
+    persist(reminders.filter(r => r.id !== id));
+    haptics.warning();
+    void cancel('reminder', id);
+  };
 
   const handleToggle = (id: string) => {
-    persist(reminders.map(r => r.id === id ? { ...r, done: !r.done } : r));
+    haptics.tap();
+    const next = reminders.map(r => r.id === id ? { ...r, done: !r.done } : r);
+    persist(next);
+    const target = next.find(r => r.id === id);
+    if (target) void scheduleForReminder(target);
   };
 
   // Filter + sort
@@ -584,15 +621,24 @@ export default function ReminderScreen() {
 
         {/* Empty state */}
         {filtered.length === 0 && (
-          <View style={styles.empty}>
-            <Ionicons name="notifications-outline" size={52} color={colors.textMuted} />
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>
-              {filter === 'all' ? 'No reminders yet' : `No ${filter} reminders`}
-            </Text>
-            <Text style={[styles.emptySub, { color: colors.textMuted }]}>
-              {filter === 'all' ? 'Tap + to set your first reminder' : 'Change the filter to see others'}
-            </Text>
-          </View>
+          filter === 'all' ? (
+            <EmptyState
+              icon="notifications-outline"
+              title="No reminders yet"
+              hint="Set a one-off, daily, or weekly reminder. The app will fire a system notification at the right time, even when closed."
+              accent={ACCENT}
+              actionLabel="Add reminder"
+              onAction={() => setSheet({ visible: true, editing: null })}
+            />
+          ) : (
+            <EmptyState
+              icon="filter-outline"
+              title={`No ${filter} reminders`}
+              hint="Switch the filter chip above to see your other reminders."
+              accent={ACCENT}
+              compact
+            />
+          )
         )}
       </ScrollView>
 

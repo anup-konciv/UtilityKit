@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import EmptyState from '@/components/EmptyState';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 const ACCENT = '#E11D48';
@@ -90,10 +91,14 @@ export default function EventCountdownScreen() {
       }
     >
       {sorted.length === 0 ? (
-        <View style={styles.empty}>
-          <Ionicons name="hourglass-outline" size={48} color={colors.textMuted} />
-          <Text style={[styles.emptyText, { color: colors.textMuted }]}>No countdowns yet. Tap + to add one!</Text>
-        </View>
+        <EmptyState
+          icon="hourglass-outline"
+          title="No countdowns yet"
+          hint="Add a vacation, anniversary, deadline or any future date and watch the days, hours, minutes tick down."
+          accent={ACCENT}
+          actionLabel="Add countdown"
+          onAction={() => { setTitle(''); setDate(''); setColor(EVENT_COLORS[0]); setShowAdd(true); }}
+        />
       ) : (
         sorted.map(event => {
           const rem = getRemaining(event.date);

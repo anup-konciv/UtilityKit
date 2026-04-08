@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import EmptyState from '@/components/EmptyState';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 const ACCENT = '#A855F7';
@@ -142,10 +143,14 @@ export default function FlashcardsScreen() {
         }
       >
         {decks.length === 0 ? (
-          <View style={styles.empty}>
-            <Ionicons name="albums-outline" size={48} color={colors.textMuted} />
-            <Text style={[styles.emptyText, { color: colors.textMuted }]}>No decks yet. Tap + to create one!</Text>
-          </View>
+          <EmptyState
+            icon="albums-outline"
+            title="No decks yet"
+            hint="Build a deck of flashcards to study any topic. Tap a card to flip and reveal the answer."
+            accent={ACCENT}
+            actionLabel="Create deck"
+            onAction={() => { setEditDeckId(null); setDeckName(''); setDeckColor(DECK_COLORS[0]); setShowAddDeck(true); }}
+          />
         ) : (
           decks.map(deck => (
             <TouchableOpacity
@@ -227,10 +232,14 @@ export default function FlashcardsScreen() {
       </TouchableOpacity>
 
       {activeDeck.cards.length === 0 ? (
-        <View style={styles.empty}>
-          <Ionicons name="document-outline" size={48} color={colors.textMuted} />
-          <Text style={[styles.emptyText, { color: colors.textMuted }]}>No cards yet. Tap + to add one!</Text>
-        </View>
+        <EmptyState
+          icon="document-outline"
+          title="No cards in this deck"
+          hint="Add a question on the front and the answer on the back. Cards in the same deck share the same colour."
+          accent={activeDeck.color}
+          actionLabel="Add card"
+          onAction={() => setShowAddCard(true)}
+        />
       ) : (
         <>
           {/* Progress */}

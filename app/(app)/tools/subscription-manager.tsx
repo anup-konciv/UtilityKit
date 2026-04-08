@@ -7,6 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import { schedule, cancel } from '@/lib/notifications';
+import { haptics } from '@/lib/haptics';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 const ACCENT = '#EC4899';
@@ -157,6 +159,27 @@ export default function SubscriptionManagerScreen() {
     saveJSON(KEYS.subscriptions, list);
   }, []);
 
+  // Schedule a "renews tomorrow" notification 24h before the next billing
+  // date for active subscriptions. Cancels everything for non-active subs.
+  const scheduleSubscription = useCallback(async (sub: Subscription) => {
+    if (sub.status !== 'active') {
+      await cancel('subscription', sub.id);
+      return;
+    }
+    const target = new Date(sub.nextBillingDate + 'T09:00:00');
+    target.setDate(target.getDate() - 1);
+    if (Number.isNaN(target.getTime())) return;
+    await schedule({
+      id: sub.id,
+      namespace: 'subscription',
+      title: `${sub.name} renews tomorrow`,
+      body: `₹${sub.amount.toLocaleString()} on ${sub.nextBillingDate}`,
+      date: target,
+      repeat: 'none',
+      data: { subscriptionId: sub.id },
+    });
+  }, []);
+
   const detailSub = subs.find(s => s.id === showDetail);
 
   /* ───── Filtered & sorted ───── */
@@ -198,6 +221,8 @@ export default function SubscriptionManagerScreen() {
       createdAt: todayISO(),
     };
     persist([...subs, newSub]);
+    haptics.success();
+    void scheduleSubscription(newSub);
     resetForm();
     setShowAdd(false);
   };
@@ -225,6 +250,9 @@ export default function SubscriptionManagerScreen() {
         : s
     );
     persist(updated);
+    haptics.success();
+    const editedSub = updated.find(s => s.id === detailSub.id);
+    if (editedSub) void scheduleSubscription(editedSub);
     setEditMode(false);
   };
 
@@ -241,6 +269,9 @@ export default function SubscriptionManagerScreen() {
         onPress: () => {
           const updated = subs.map(s => s.id === id ? { ...s, status: newStatus } : s);
           persist(updated);
+          const next = updated.find(s => s.id === id);
+          if (next) void scheduleSubscription(next);
+          haptics.tap();
         },
       },
     ]);
@@ -253,7 +284,9 @@ export default function SubscriptionManagerScreen() {
       {
         text: 'Delete', style: 'destructive',
         onPress: () => {
+          haptics.warning();
           persist(subs.filter(s => s.id !== id));
+          void cancel('subscription', id);
           setShowDetail(null);
         },
       },

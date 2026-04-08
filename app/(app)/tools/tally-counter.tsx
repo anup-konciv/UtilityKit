@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, TextInput, Modal, Alert, Vibration } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, TextInput, Modal, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import { haptics } from '@/lib/haptics';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 const ACCENT = '#0891B2';
@@ -42,7 +43,7 @@ export default function TallyCounterScreen() {
   }, []);
 
   const increment = (id: string) => {
-    Vibration.vibrate(10);
+    haptics.tap();
     persist(counters.map(c => c.id === id ? { ...c, count: c.count + c.step } : c));
   };
 

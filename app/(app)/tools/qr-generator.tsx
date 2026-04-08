@@ -5,6 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
+import { useToolHistory } from '@/lib/use-tool-history';
+import { haptics } from '@/lib/haptics';
 
 const ACCENT = '#1E293B';
 
@@ -28,6 +30,9 @@ export default function QRGeneratorScreen() {
   const [generated, setGenerated] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // Persisted recently-generated codes — auto-saved on every Generate.
+  // Tap an entry to re-render the same QR.
+  const history = useToolHistory<{ text: string; presetIdx: number }>('qr-gen', { max: 10 });
 
   const size = SIZES[sizeIdx];
 
@@ -39,11 +44,16 @@ export default function QRGeneratorScreen() {
   const generate = useCallback(() => {
     const trimmed = text.trim();
     if (!trimmed) return;
+    haptics.success();
     setLoading(true);
     setError('');
     setGenerated(trimmed);
-    // Image onLoad/onError handles loading state
-  }, [text]);
+    // Auto-save to history; dedupe by exact text match.
+    if (!history.entries.some((e) => e.value.text === trimmed)) {
+      const previewLabel = trimmed.length > 50 ? `${trimmed.slice(0, 50)}…` : trimmed;
+      history.push({ text: trimmed, presetIdx }, `${PRESETS[presetIdx].label} • ${previewLabel}`);
+    }
+  }, [text, history, presetIdx]);
 
   const copyUrl = useCallback(async () => {
     if (!qrUrl) return;
@@ -137,6 +147,42 @@ export default function QRGeneratorScreen() {
             <Ionicons name="copy-outline" size={16} color={ACCENT} />
             <Text style={[styles.copyText, { color: ACCENT }]}>Copy Image URL</Text>
           </TouchableOpacity>
+        </View>
+      )}
+
+      {history.entries.length > 0 && (
+        <View style={[styles.inputCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm }}>
+            <Text style={[{ color: colors.textMuted, fontSize: 11, fontFamily: Fonts.bold, letterSpacing: 1, textTransform: 'uppercase' }]}>Recent</Text>
+            <TouchableOpacity onPress={() => { haptics.warning(); history.clear(); }}>
+              <Text style={[{ color: ACCENT, fontFamily: Fonts.semibold, fontSize: 12 }]}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+          {history.entries.map((entry, idx) => (
+            <TouchableOpacity
+              key={entry.id}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+                paddingVertical: 10,
+                borderBottomWidth: idx < history.entries.length - 1 ? 0.5 : 0,
+                borderBottomColor: colors.border,
+              }}
+              onPress={() => {
+                haptics.tap();
+                setPresetIdx(entry.value.presetIdx);
+                setText(entry.value.text);
+                setGenerated(entry.value.text);
+                setError('');
+              }}
+            >
+              <Ionicons name="refresh" size={14} color={colors.textMuted} />
+              <Text style={[{ color: colors.text, fontFamily: Fonts.semibold, fontSize: 12, flex: 1 }]} numberOfLines={1}>
+                {entry.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
       )}
     </ScreenShell>

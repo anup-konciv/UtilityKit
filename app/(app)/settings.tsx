@@ -1,12 +1,18 @@
 import { useState, useMemo, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Switch, Alert } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/context/auth';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import {
+  exportToClipboard,
+  exportToFile,
+  importFromClipboard,
+  importFromFile,
+  resetAll,
+} from '@/lib/backup';
+import { invalidateHapticsCache } from '@/lib/haptics';
 import { Fonts, Radii, Spacing, type ThemeMode } from '@/constants/theme';
 
 const MODES: { value: ThemeMode; label: string; icon: string; desc: string }[] = [
@@ -31,56 +37,49 @@ export default function SettingsScreen() {
   const toggleHaptics = (val: boolean) => {
     setHapticsEnabled(val);
     saveJSON(KEYS.hapticsEnabled, val);
+    invalidateHapticsCache();
   };
 
-  const exportAllData = async () => {
+  const exportAsFile = async () => {
     try {
-      const allKeys = Object.values(KEYS);
-      const data: Record<string, any> = {};
-      for (const key of allKeys) {
-        const val = await AsyncStorage.getItem(key);
-        if (val !== null) data[key] = JSON.parse(val);
-      }
-      const json = JSON.stringify(data, null, 2);
-      await Clipboard.setStringAsync(json);
-      Alert.alert('Exported', 'All data copied to clipboard as JSON. Save it somewhere safe to restore later.');
-    } catch {
-      Alert.alert('Error', 'Failed to export data.');
+      const { summary } = await exportToFile();
+      Alert.alert(
+        'Backup ready',
+        `Saved ${summary.populatedKeys} data slices (${(summary.byteSize / 1024).toFixed(1)} KB). Use the share sheet to send it to Files, iCloud, Drive, or email.`,
+      );
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to export backup.');
     }
   };
 
-  const importData = async () => {
+  const exportToClip = async () => {
     try {
-      const json = await Clipboard.getStringAsync();
-      if (!json || !json.trim()) {
-        Alert.alert('Empty Clipboard', 'Copy your backup JSON to clipboard first, then tap Import.');
-        return;
-      }
-      const data = JSON.parse(json);
-      if (typeof data !== 'object' || data === null) {
-        Alert.alert('Invalid Data', 'Clipboard does not contain valid UtilityKit backup data.');
-        return;
-      }
-
+      const summary = await exportToClipboard();
       Alert.alert(
-        'Import Data',
-        `Found ${Object.keys(data).length} data entries. This will overwrite existing data. Continue?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Import',
-            style: 'destructive',
-            onPress: async () => {
-              for (const [key, value] of Object.entries(data)) {
-                await AsyncStorage.setItem(key, JSON.stringify(value));
-              }
-              Alert.alert('Success', 'Data imported. Restart the app to see changes.');
-            },
-          },
-        ],
+        'Copied',
+        `${summary.populatedKeys} data slices copied to clipboard (${(summary.byteSize / 1024).toFixed(1)} KB). Paste it somewhere safe to restore later.`,
       );
     } catch {
-      Alert.alert('Invalid Data', 'Clipboard does not contain valid JSON. Copy your backup first.');
+      Alert.alert('Error', 'Failed to copy backup to clipboard.');
+    }
+  };
+
+  const importFromFilePicker = async () => {
+    try {
+      const restored = await importFromFile();
+      if (restored == null) return; // user cancelled
+      Alert.alert('Imported', `Restored ${restored} data slices. Restart the app to see changes.`);
+    } catch (e) {
+      Alert.alert('Invalid file', e instanceof Error ? e.message : 'Could not parse the selected file.');
+    }
+  };
+
+  const importFromClip = async () => {
+    try {
+      const restored = await importFromClipboard();
+      Alert.alert('Imported', `Restored ${restored} data slices. Restart the app to see changes.`);
+    } catch (e) {
+      Alert.alert('Invalid Data', e instanceof Error ? e.message : 'Clipboard does not contain valid JSON.');
     }
   };
 
@@ -103,8 +102,7 @@ export default function SettingsScreen() {
                   text: 'Yes, Reset',
                   style: 'destructive',
                   onPress: async () => {
-                    const allKeys = Object.values(KEYS);
-                    await AsyncStorage.multiRemove(allKeys);
+                    await resetAll();
                     Alert.alert('Done', 'All data has been reset. Restart the app.');
                   },
                 },
@@ -211,26 +209,52 @@ export default function SettingsScreen() {
       {/* Data Management */}
       <Text style={styles.sectionLabel}>Data Management</Text>
       <View style={[styles.prefCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <TouchableOpacity style={styles.dataRow} onPress={exportAllData}>
+        <TouchableOpacity style={styles.dataRow} onPress={exportAsFile}>
           <View style={[styles.prefIcon, { backgroundColor: '#10B98120' }]}>
             <Ionicons name="cloud-upload-outline" size={18} color="#10B981" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.prefLabel, { color: colors.text }]}>Export Data</Text>
-            <Text style={[styles.prefDesc, { color: colors.textMuted }]}>Copy all data as JSON to clipboard</Text>
+            <Text style={[styles.prefLabel, { color: colors.text }]}>Backup to File</Text>
+            <Text style={[styles.prefDesc, { color: colors.textMuted }]}>Save versioned JSON via the share sheet (Files, iCloud, Drive, email)</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
         </TouchableOpacity>
 
         <View style={[styles.rowDivider, { backgroundColor: colors.border }]} />
 
-        <TouchableOpacity style={styles.dataRow} onPress={importData}>
+        <TouchableOpacity style={styles.dataRow} onPress={importFromFilePicker}>
           <View style={[styles.prefIcon, { backgroundColor: '#3B82F620' }]}>
             <Ionicons name="cloud-download-outline" size={18} color="#3B82F6" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.prefLabel, { color: colors.text }]}>Import Data</Text>
-            <Text style={[styles.prefDesc, { color: colors.textMuted }]}>Restore from clipboard JSON backup</Text>
+            <Text style={[styles.prefLabel, { color: colors.text }]}>Restore from File</Text>
+            <Text style={[styles.prefDesc, { color: colors.textMuted }]}>Pick a .json backup with the document picker</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+        </TouchableOpacity>
+
+        <View style={[styles.rowDivider, { backgroundColor: colors.border }]} />
+
+        <TouchableOpacity style={styles.dataRow} onPress={exportToClip}>
+          <View style={[styles.prefIcon, { backgroundColor: '#A855F720' }]}>
+            <Ionicons name="copy-outline" size={18} color="#A855F7" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.prefLabel, { color: colors.text }]}>Copy to Clipboard</Text>
+            <Text style={[styles.prefDesc, { color: colors.textMuted }]}>Quick text export, useful when sharing via chat</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+        </TouchableOpacity>
+
+        <View style={[styles.rowDivider, { backgroundColor: colors.border }]} />
+
+        <TouchableOpacity style={styles.dataRow} onPress={importFromClip}>
+          <View style={[styles.prefIcon, { backgroundColor: '#0EA5E920' }]}>
+            <Ionicons name="clipboard-outline" size={18} color="#0EA5E9" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.prefLabel, { color: colors.text }]}>Paste from Clipboard</Text>
+            <Text style={[styles.prefDesc, { color: colors.textMuted }]}>Restore from a backup JSON in clipboard</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
         </TouchableOpacity>

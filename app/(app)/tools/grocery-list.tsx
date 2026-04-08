@@ -17,6 +17,7 @@ import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 import { withAlpha } from '@/lib/color-utils';
 import { KEYS, loadJSON, saveJSON } from '@/lib/storage';
+import { haptics } from '@/lib/haptics';
 
 /* ── types ── */
 
@@ -160,18 +161,27 @@ export default function GroceryListScreen() {
   }
 
   function toggleChecked(id: string) {
+    const target = items.find((i) => i.id === id);
+    if (target?.checked) {
+      haptics.tap();
+    } else {
+      haptics.success();
+    }
     persist(items.map((i) => (i.id === id ? { ...i, checked: !i.checked } : i)));
   }
 
   function toggleFavorite(id: string) {
+    haptics.selection();
     persist(items.map((i) => (i.id === id ? { ...i, favorite: !i.favorite } : i)));
   }
 
   function removeItem(id: string) {
+    haptics.warning();
     persist(items.filter((i) => i.id !== id));
   }
 
   function clearChecked() {
+    haptics.warning();
     const count = items.filter((i) => i.checked).length;
     if (count === 0) return;
     Alert.alert(

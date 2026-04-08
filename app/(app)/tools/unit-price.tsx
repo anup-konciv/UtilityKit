@@ -6,6 +6,8 @@ import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 import { pickSeededValue, withAlpha } from '@/lib/color-utils';
+import { useToolHistory } from '@/lib/use-tool-history';
+import { haptics } from '@/lib/haptics';
 
 const ACCENT = '#9333EA';
 
@@ -66,6 +68,7 @@ export default function UnitPriceScreen() {
     { id: uid(), name: 'Everyday Pack', price: '79', quantity: '500', unit: 'g' },
     { id: uid(), name: 'Family Pack', price: '139', quantity: '1000', unit: 'g' },
   ]);
+  const history = useToolHistory<Product[]>('unit-price', { max: 8 });
 
   const updateProduct = useCallback((id: string, field: keyof Product, value: string) => {
     setProducts((current) => current.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
@@ -250,10 +253,61 @@ export default function UnitPriceScreen() {
         );
       })}
 
-      <TouchableOpacity style={[styles.addButton, { borderColor: withAlpha(ACCENT, '38') }]} onPress={addProduct}>
-        <Ionicons name="add" size={20} color={ACCENT} />
-        <Text style={[styles.addButtonText, { color: ACCENT }]}>Add Another Product</Text>
-      </TouchableOpacity>
+      <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+        <TouchableOpacity style={[styles.addButton, { borderColor: withAlpha(ACCENT, '38'), flex: 1 }]} onPress={addProduct}>
+          <Ionicons name="add" size={20} color={ACCENT} />
+          <Text style={[styles.addButtonText, { color: ACCENT }]}>Add Product</Text>
+        </TouchableOpacity>
+        {analysis.hasComparableGroup && (
+          <TouchableOpacity
+            style={[styles.addButton, { borderColor: withAlpha(ACCENT, '38'), flex: 1, backgroundColor: withAlpha(ACCENT, '12') }]}
+            onPress={() => {
+              haptics.success();
+              const summary = products
+                .filter((p) => p.name.trim())
+                .map((p) => `${p.name} ${p.price}/${p.quantity}${p.unit}`)
+                .join(' • ');
+              history.push(products, summary);
+            }}
+          >
+            <Ionicons name="bookmark-outline" size={20} color={ACCENT} />
+            <Text style={[styles.addButtonText, { color: ACCENT }]}>Save</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {history.entries.length > 0 && (
+        <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm }}>
+            <Text style={[styles.summaryTitle, { color: colors.textMuted }]}>Saved Comparisons</Text>
+            <TouchableOpacity onPress={() => { haptics.warning(); history.clear(); }}>
+              <Text style={[{ color: ACCENT, fontFamily: Fonts.semibold, fontSize: 12 }]}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+          {history.entries.map((entry, idx) => (
+            <TouchableOpacity
+              key={entry.id}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+                paddingVertical: 10,
+                borderBottomWidth: idx < history.entries.length - 1 ? 0.5 : 0,
+                borderBottomColor: colors.border,
+              }}
+              onPress={() => {
+                haptics.tap();
+                setProducts(entry.value);
+              }}
+            >
+              <Ionicons name="refresh" size={14} color={colors.textMuted} />
+              <Text style={[{ color: colors.text, fontFamily: Fonts.semibold, fontSize: 12, flex: 1 }]} numberOfLines={2}>
+                {entry.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
 
       <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.summaryTitle, { color: colors.textMuted }]}>Comparison Summary</Text>

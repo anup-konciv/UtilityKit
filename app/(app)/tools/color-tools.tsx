@@ -6,6 +6,8 @@ import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { hexToRgb, rgbToHex, rgbToHsl, hslToRgb } from '@/lib/color-utils';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
+import { useToolHistory } from '@/lib/use-tool-history';
+import { haptics } from '@/lib/haptics';
 
 function hslToHex(h: number, s: number, l: number): string {
   const rgb = hslToRgb(((h % 360) + 360) % 360, s, l);
@@ -57,6 +59,11 @@ export default function ColorToolsScreen() {
   const [r, setR] = useState('99');
   const [g, setG] = useState('102');
   const [b, setB] = useState('241');
+  // Saved palette — each entry remembers the full RGB triple.
+  const palette = useToolHistory<{ hex: string; r: string; g: string; b: string }>(
+    'color-palette',
+    { max: 24 },
+  );
 
   const hsl = useMemo(() => rgbToHsl(parseInt(r) || 0, parseInt(g) || 0, parseInt(b) || 0), [r, g, b]);
 
@@ -278,6 +285,46 @@ export default function ColorToolsScreen() {
             </>
           );
         })()}
+      </View>
+
+      {/* Saved palette */}
+      <View style={styles.secRow}>
+        <Text style={[styles.secLabel, { marginTop: Spacing.lg, marginBottom: 0 }]}>My Palette</Text>
+        <TouchableOpacity
+          style={[styles.copyBtn, { backgroundColor: '#EC489920', width: 'auto', paddingHorizontal: 12, flexDirection: 'row', gap: 4 }]}
+          onPress={() => {
+            if (palette.entries.some((e) => e.value.hex === hex)) return;
+            haptics.success();
+            palette.push({ hex, r, g, b }, hex);
+          }}
+        >
+          <Ionicons name="add" size={14} color="#EC4899" />
+          <Text style={[{ color: '#EC4899', fontSize: 11, fontFamily: Fonts.bold }]}>Save</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        {palette.entries.length === 0 ? (
+          <Text style={[styles.fmtText, { color: colors.textMuted }]}>
+            Tap Save to pin the current colour. Long-press a swatch to remove it.
+          </Text>
+        ) : (
+          <View style={styles.palette}>
+            {palette.entries.map((entry) => (
+              <TouchableOpacity
+                key={entry.id}
+                style={[styles.paletteDot, { backgroundColor: entry.value.hex, borderWidth: 1, borderColor: colors.border }]}
+                onPress={() => {
+                  haptics.tap();
+                  applyHex(entry.value.hex);
+                }}
+                onLongPress={() => {
+                  haptics.warning();
+                  palette.remove(entry.id);
+                }}
+              />
+            ))}
+          </View>
+        )}
       </View>
 
       {/* CSS Gradient */}

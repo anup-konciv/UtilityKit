@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import EmptyState from '@/components/EmptyState';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 const ACCENT = '#0891B2';
@@ -224,10 +225,14 @@ export default function TravelTrackerScreen() {
 
       {/* Trips */}
       {filtered.length === 0 ? (
-        <View style={styles.emptyWrap}>
-          <Ionicons name="airplane-outline" size={48} color={colors.border} />
-          <Text style={[styles.emptyText, { color: colors.textMuted }]}>No trips yet</Text>
-        </View>
+        <EmptyState
+          icon="airplane-outline"
+          title="No trips yet"
+          hint="Plan your next trip with a destination, dates and budget. Log expenses while you travel and watch the budget bar update."
+          accent={ACCENT}
+          actionLabel="Plan a trip"
+          onAction={() => setShowAdd(true)}
+        />
       ) : filtered.map(trip => {
         const cfg = STATUS_CONFIG[trip.status];
         const duration = daysBetween(trip.startDate, trip.endDate);

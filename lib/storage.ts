@@ -61,6 +61,9 @@ export const KEYS = {
   docVaultFolders: 'uk_doc_vault_folders',
   docVaultAuth: 'uk_doc_vault_auth',
   docVaultSettings: 'uk_doc_vault_settings',
+  bmiHistory: 'uk_bmi_history',
+  notificationsEnabled: 'uk_notifications_enabled',
+  toolHistory: 'uk_tool_history',
 } as const;
 
 export async function loadJSON<T>(key: string, fallback: T): Promise<T> {

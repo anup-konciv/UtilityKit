@@ -1,13 +1,13 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Vibration } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
-import { loadJSON, saveJSON } from '@/lib/storage';
+import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import { haptics } from '@/lib/haptics';
+import { fireNow } from '@/lib/notifications';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
-const SETTINGS_KEY = 'uk_pomodoro_settings';
-const TODAY_KEY = 'uk_pomodoro_today';
 
 const WORK_COLOR = '#F97316';
 const BREAK_COLOR = '#10B981';
@@ -87,17 +87,17 @@ export default function PomodoroScreen() {
   // Load persisted data
   useEffect(() => {
     (async () => {
-      const saved = await loadJSON<PomodoroSettings>(SETTINGS_KEY, DEFAULT_SETTINGS);
+      const saved = await loadJSON<PomodoroSettings>(KEYS.pomodoroSettings, DEFAULT_SETTINGS);
       setSettings(saved);
       const dur = saved.workMin * 60;
       setSecondsLeft(dur);
       setTotalSeconds(dur);
 
-      const today = await loadJSON<TodayData>(TODAY_KEY, { date: todayStr(), completed: 0 });
+      const today = await loadJSON<TodayData>(KEYS.pomodoroToday, { date: todayStr(), completed: 0 });
       if (today.date === todayStr()) {
         setTodayCompleted(today.completed);
       } else {
-        await saveJSON(TODAY_KEY, { date: todayStr(), completed: 0 });
+        await saveJSON(KEYS.pomodoroToday, { date: todayStr(), completed: 0 });
       }
     })();
   }, []);
@@ -105,13 +105,13 @@ export default function PomodoroScreen() {
   // Persist settings on change
   const updateSettings = useCallback(async (next: PomodoroSettings) => {
     setSettings(next);
-    await saveJSON(SETTINGS_KEY, next);
+    await saveJSON(KEYS.pomodoroSettings, next);
   }, []);
 
   // Persist today's count
   const persistToday = useCallback(async (count: number) => {
     setTodayCompleted(count);
-    await saveJSON(TODAY_KEY, { date: todayStr(), completed: count });
+    await saveJSON(KEYS.pomodoroToday, { date: todayStr(), completed: count });
   }, []);
 
   // Clear interval helper
@@ -161,7 +161,14 @@ export default function PomodoroScreen() {
   const onTimerComplete = useCallback(() => {
     clearTick();
     setRunning(false);
-    Vibration.vibrate([0, 400, 200, 400]);
+    haptics.success();
+    // Fire a local notification so the user knows even if the app is backgrounded.
+    // No-op until expo-notifications is installed (see lib/notifications.ts).
+    const wasWork = sessionTypeRef.current === 'work';
+    void fireNow(
+      wasWork ? 'Focus session complete' : 'Break finished',
+      wasWork ? 'Time for a break — you earned it.' : 'Back to work? Tap to start the next session.'
+    );
     goToNextSession(sessionTypeRef.current);
   }, [clearTick, goToNextSession]);
 

@@ -4,6 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
+import { useToolHistory } from '@/lib/use-tool-history';
+import { haptics } from '@/lib/haptics';
 
 const ACCENT = '#6366F1';
 const ACCENT2 = '#4F46E5';
@@ -37,6 +39,12 @@ export default function EMICalculatorScreen() {
   const [tenureUnit, setTenureUnit] = useState<TenureUnit>('months');
   const [viewMode, setViewMode] = useState<ViewMode>('summary');
   const [showSchedule, setShowSchedule] = useState(false);
+  const history = useToolHistory<{
+    principal: string;
+    rate: string;
+    tenure: string;
+    tenureUnit: TenureUnit;
+  }>('emi-calc', { max: 12 });
 
   const tenureMonths = tenureUnit === 'years' ? parseInt(tenure) * 12 : parseInt(tenure);
 
@@ -94,6 +102,15 @@ export default function EMICalculatorScreen() {
     const text = `EMI Calculator\n\nLoan: ₹${fmt(parseFloat(principal))}\nRate: ${rate}%\nTenure: ${tenure} ${tenureUnit}\n\nMonthly EMI: ₹${fmtDec(result.EMI)}\nTotal Interest: ₹${fmt(result.interest)}\nTotal Payment: ₹${fmt(result.total)}`;
     await Share.share({ message: text });
   }, [result, principal, rate, tenure, tenureUnit]);
+
+  const saveCurrentToHistory = useCallback(() => {
+    if (!result) return;
+    haptics.success();
+    history.push(
+      { principal, rate, tenure, tenureUnit },
+      `₹${fmt(parseFloat(principal))} • ${rate}% • ${tenure}${tenureUnit === 'years' ? 'y' : 'm'} → EMI ₹${fmt(result.EMI)}`,
+    );
+  }, [result, principal, rate, tenure, tenureUnit, history]);
 
   // Donut chart segments via arcs
   const donutData = result ? [
@@ -224,9 +241,14 @@ export default function EMICalculatorScreen() {
                   {tenureUnit === 'months' && parseInt(tenure) >= 12 ? ` (${(parseInt(tenure) / 12).toFixed(1)} yrs)` : ''}
                 </Text>
               </View>
-              <TouchableOpacity style={styles.shareBtn} onPress={shareResult}>
-                <Ionicons name="share-outline" size={20} color="#fff" />
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity style={styles.shareBtn} onPress={saveCurrentToHistory}>
+                  <Ionicons name="bookmark-outline" size={20} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.shareBtn} onPress={shareResult}>
+                  <Ionicons name="share-outline" size={20} color="#fff" />
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Donut visual */}
@@ -310,6 +332,36 @@ export default function EMICalculatorScreen() {
               </View>
             </View>
           </View>
+
+          {/* Saved scenarios */}
+          {history.entries.length > 0 && (
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={styles.savedHeader}>
+                <Text style={[styles.savedTitle, { color: colors.textMuted }]}>SAVED SCENARIOS</Text>
+                <TouchableOpacity onPress={() => { haptics.warning(); history.clear(); }}>
+                  <Text style={[styles.savedClear, { color: ACCENT }]}>Clear all</Text>
+                </TouchableOpacity>
+              </View>
+              {history.entries.slice(0, 8).map((entry) => (
+                <TouchableOpacity
+                  key={entry.id}
+                  style={[styles.savedRow, { borderBottomColor: colors.border }]}
+                  onPress={() => {
+                    haptics.tap();
+                    setPrincipal(entry.value.principal);
+                    setRate(entry.value.rate);
+                    setTenure(entry.value.tenure);
+                    setTenureUnit(entry.value.tenureUnit);
+                  }}
+                >
+                  <Ionicons name="refresh-outline" size={14} color={colors.textMuted} />
+                  <Text style={[styles.savedText, { color: colors.text }]} numberOfLines={1}>
+                    {entry.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           {/* Amortization Schedule */}
           <TouchableOpacity
@@ -475,6 +527,11 @@ const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
 
     // Schedule toggle
     scheduleToggle: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, padding: Spacing.lg, borderRadius: Radii.xl, borderWidth: 1, marginBottom: Spacing.lg },
+    savedHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
+    savedTitle: { fontSize: 11, fontFamily: Fonts.bold, letterSpacing: 1 },
+    savedClear: { fontSize: 12, fontFamily: Fonts.semibold },
+    savedRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, borderBottomWidth: 0.5 },
+    savedText: { fontSize: 13, fontFamily: Fonts.semibold, flex: 1 },
     scheduleToggleText: { flex: 1, fontSize: 14, fontFamily: Fonts.semibold },
 
     // View toggle

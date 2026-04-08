@@ -6,6 +6,8 @@ import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 import { withAlpha } from '@/lib/color-utils';
+import { useToolHistory } from '@/lib/use-tool-history';
+import { haptics } from '@/lib/haptics';
 
 const ACCENT = '#F97316';
 const HIGHLIGHT = '#14B8A6';
@@ -34,6 +36,10 @@ export default function TipCalculatorScreen() {
   const [tipPct, setTipPct] = useState('12');
   const [people, setPeople] = useState('3');
   const [service, setService] = useState<string>('dining');
+  const history = useToolHistory<{ bill: string; tipPct: string; people: string; service: string }>(
+    'tip-calc',
+    { max: 10 },
+  );
 
   const peopleCount = Math.max(1, Number.parseInt(people, 10) || 1);
 
@@ -266,7 +272,48 @@ export default function TipCalculatorScreen() {
         <Text style={[styles.insightCopy, { color: colors.textMuted }]}>
           Add {formatMoney(Math.max(calc.roundUpDelta, 0))} to make the full bill land on a clean per-person number.
         </Text>
+        <TouchableOpacity
+          style={[styles.saveBtn, { backgroundColor: withAlpha(ACCENT, '15') }]}
+          onPress={() => {
+            if (!calc.billValue) return;
+            haptics.success();
+            history.push(
+              { bill, tipPct, people, service },
+              `${formatMoney(calc.billValue)} • ${calc.tipValue}% • ${peopleCount}p`,
+            );
+          }}
+        >
+          <Ionicons name="bookmark-outline" size={16} color={ACCENT} />
+          <Text style={[styles.saveBtnText, { color: ACCENT }]}>Save split</Text>
+        </TouchableOpacity>
       </View>
+
+      {history.entries.length > 0 && (
+        <View style={[styles.insightCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionEyebrow, { color: colors.textMuted }]}>Recent Splits</Text>
+            <TouchableOpacity onPress={() => { haptics.warning(); history.clear(); }}>
+              <Text style={[styles.sectionHint, { color: ACCENT }]}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+          {history.entries.slice(0, 6).map((entry) => (
+            <TouchableOpacity
+              key={entry.id}
+              style={[styles.historyRow, { borderBottomColor: colors.border }]}
+              onPress={() => {
+                haptics.tap();
+                setBill(entry.value.bill);
+                setTipPct(entry.value.tipPct);
+                setPeople(entry.value.people);
+                setService(entry.value.service);
+              }}
+            >
+              <Text style={[styles.historyText, { color: colors.text }]}>{entry.label}</Text>
+              <Ionicons name="refresh" size={14} color={colors.textMuted} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
     </ScreenShell>
   );
 }
@@ -499,5 +546,30 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       fontSize: 14,
       lineHeight: 20,
       fontFamily: Fonts.medium,
+    },
+    saveBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      paddingVertical: Spacing.sm + 2,
+      borderRadius: Radii.pill,
+      marginTop: Spacing.sm,
+    },
+    saveBtnText: {
+      fontSize: 13,
+      fontFamily: Fonts.bold,
+    },
+    historyRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 10,
+      borderBottomWidth: 0.5,
+    },
+    historyText: {
+      fontSize: 13,
+      fontFamily: Fonts.semibold,
+      flex: 1,
     },
   });
