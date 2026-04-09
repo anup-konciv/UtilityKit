@@ -5,6 +5,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
+import DateField from '@/components/DateField';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
@@ -399,9 +400,12 @@ export default function BabyCareScreen() {
               value={pName} onChangeText={setPName} placeholder="Baby's name" placeholderTextColor={colors.textMuted} autoFocus
             />
             <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Date of Birth</Text>
-            <TextInput
-              style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-              value={pDob} onChangeText={setPDob} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textMuted}
+            <DateField
+              value={pDob}
+              onChange={setPDob}
+              accent={ACCENT}
+              placeholder="When was baby born?"
+              maxDate={(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })()}
             />
             <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Gender</Text>
             <View style={styles.genderRow}>
@@ -458,7 +462,7 @@ export default function BabyCareScreen() {
                 <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Time</Text>
                 <TextInput
                   style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                  value={feedTime} onChangeText={setFeedTime} placeholder="HH:MM" placeholderTextColor={colors.textMuted}
+                  value={feedTime} onChangeText={v => { const d = v.replace(/[^0-9]/g, ''); setFeedTime(d.length <= 2 ? d : `${d.slice(0,2)}:${d.slice(2,4)}`); }} placeholder="HH:MM" placeholderTextColor={colors.textMuted} keyboardType="number-pad" maxLength={5}
                 />
                 <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Amount (optional)</Text>
                 <TextInput
@@ -502,7 +506,7 @@ export default function BabyCareScreen() {
                 <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Time</Text>
                 <TextInput
                   style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                  value={diaperTime} onChangeText={setDiaperTime} placeholder="HH:MM" placeholderTextColor={colors.textMuted}
+                  value={diaperTime} onChangeText={v => { const d = v.replace(/[^0-9]/g, ''); setDiaperTime(d.length <= 2 ? d : `${d.slice(0,2)}:${d.slice(2,4)}`); }} placeholder="HH:MM" placeholderTextColor={colors.textMuted} keyboardType="number-pad" maxLength={5}
                 />
                 <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Note</Text>
                 <TextInput
@@ -525,12 +529,12 @@ export default function BabyCareScreen() {
                 <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Sleep Start</Text>
                 <TextInput
                   style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                  value={sleepStart} onChangeText={setSleepStart} placeholder="HH:MM" placeholderTextColor={colors.textMuted}
+                  value={sleepStart} onChangeText={v => { const d = v.replace(/[^0-9]/g, ''); setSleepStart(d.length <= 2 ? d : `${d.slice(0,2)}:${d.slice(2,4)}`); }} placeholder="HH:MM" placeholderTextColor={colors.textMuted} keyboardType="number-pad" maxLength={5}
                 />
                 <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Sleep End</Text>
                 <TextInput
                   style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                  value={sleepEnd} onChangeText={setSleepEnd} placeholder="HH:MM" placeholderTextColor={colors.textMuted}
+                  value={sleepEnd} onChangeText={v => { const d = v.replace(/[^0-9]/g, ''); setSleepEnd(d.length <= 2 ? d : `${d.slice(0,2)}:${d.slice(2,4)}`); }} placeholder="HH:MM" placeholderTextColor={colors.textMuted} keyboardType="number-pad" maxLength={5}
                 />
                 <View style={styles.modalBtns}>
                   <TouchableOpacity style={[styles.modalBtn, { backgroundColor: colors.surface }]} onPress={() => setShowAdd(false)}>
@@ -558,9 +562,11 @@ export default function BabyCareScreen() {
                   ))}
                 </ScrollView>
                 <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Date</Text>
-                <TextInput
-                  style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                  value={msDate} onChangeText={setMsDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textMuted}
+                <DateField
+                  value={msDate}
+                  onChange={setMsDate}
+                  accent={ACCENT}
+                  placeholder="Date of milestone"
                 />
                 <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Note</Text>
                 <TextInput

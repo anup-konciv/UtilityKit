@@ -6,6 +6,7 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
+import DateField from '@/components/DateField';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
@@ -337,15 +338,14 @@ function AddExpenseSheet({
             ))}
           </View>
           {dateMode === 'custom' && (
-            <TextInput
-              style={[s.noteInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, marginTop: 6 }]}
-              value={customDate}
-              onChangeText={setCustomDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.textMuted}
-              keyboardType="numbers-and-punctuation"
-              maxLength={10}
-            />
+            <View style={{ paddingHorizontal: Spacing.lg, marginTop: 6 }}>
+              <DateField
+                value={customDate}
+                onChange={setCustomDate}
+                accent={ACCENT}
+                placeholder="Pick a date"
+              />
+            </View>
           )}
 
           {/* Actions */}
@@ -1528,15 +1528,14 @@ function AddTransferSheet({ initial, onSave, onDelete, onClose, colors, currency
             ))}
           </View>
           {dateMode === 'custom' && (
-            <TextInput
-              style={[s.noteInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text, marginTop: 6 }]}
-              value={customDate}
-              onChangeText={setCustomDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.textMuted}
-              keyboardType="numbers-and-punctuation"
-              maxLength={10}
-            />
+            <View style={{ paddingHorizontal: Spacing.lg, marginTop: 6 }}>
+              <DateField
+                value={customDate}
+                onChange={setCustomDate}
+                accent={ACCENT}
+                placeholder="Pick a date"
+              />
+            </View>
           )}
 
           {/* Returned toggle — only meaningful for "lent" */}

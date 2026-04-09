@@ -1,9 +1,11 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
+import DateField from '@/components/DateField';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import { schedule, cancel, ensureNotificationPermission } from '@/lib/notifications';
 import EmptyState from '@/components/EmptyState';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
@@ -56,17 +58,44 @@ export default function EventCountdownScreen() {
     saveJSON(KEYS.countdownEvents, e);
   }, []);
 
+  // Schedule a "1 day before" reminder for an event. Fires at 09:00 the day
+  // before so users have a heads-up while still being able to plan.
+  const scheduleEvent = useCallback(async (e: CountdownEvent) => {
+    const target = new Date(e.date + 'T00:00:00');
+    target.setDate(target.getDate() - 1);
+    target.setHours(9, 0, 0, 0);
+    if (target.getTime() <= Date.now()) return; // already past
+    await ensureNotificationPermission();
+    await schedule({
+      id: e.id,
+      namespace: 'event',
+      title: `${e.title} is tomorrow`,
+      body: `Don't forget — ${e.date}`,
+      date: target,
+      repeat: 'none',
+    });
+  }, []);
+
   const addEvent = () => {
     if (!title.trim() || !date.trim()) return;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { Alert.alert('Invalid Date', 'Use YYYY-MM-DD format.'); return; }
-    persist([...events, { id: uid(), title: title.trim(), date, color }]);
+    const newEvent: CountdownEvent = { id: uid(), title: title.trim(), date, color };
+    persist([...events, newEvent]);
+    void scheduleEvent(newEvent);
     setTitle(''); setDate(''); setShowAdd(false);
   };
 
   const removeEvent = (id: string) => {
     Alert.alert('Delete Event', 'Remove this countdown?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => persist(events.filter(e => e.id !== id)) },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          persist(events.filter(e => e.id !== id));
+          void cancel('event', id);
+        },
+      },
     ]);
   };
 
@@ -144,6 +173,10 @@ export default function EventCountdownScreen() {
       )}
 
       <Modal visible={showAdd} transparent animationType="fade" onRequestClose={() => setShowAdd(false)}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>New Countdown</Text>
@@ -155,15 +188,15 @@ export default function EventCountdownScreen() {
               placeholderTextColor={colors.textMuted}
               autoFocus
             />
-            <TextInput
-              style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-              value={date}
-              onChangeText={setDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.textMuted}
-              keyboardType="numbers-and-punctuation"
-              maxLength={10}
-            />
+            <View style={{ marginBottom: Spacing.md }}>
+              <DateField
+                value={date}
+                onChange={setDate}
+                accent={ACCENT}
+                placeholder="Pick the event date"
+                minDate={todayISO()}
+              />
+            </View>
             <View style={styles.colorRow}>
               {EVENT_COLORS.map(clr => (
                 <TouchableOpacity
@@ -183,6 +216,7 @@ export default function EventCountdownScreen() {
             </View>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
     </ScreenShell>
   );

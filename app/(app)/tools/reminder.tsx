@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
-import { schedule, cancel, type RepeatMode as NotifRepeatMode } from '@/lib/notifications';
+import { schedule, cancel, ensureNotificationPermission, type RepeatMode as NotifRepeatMode } from '@/lib/notifications';
 import { haptics } from '@/lib/haptics';
 import EmptyState from '@/components/EmptyState';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
@@ -494,6 +494,8 @@ export default function ReminderScreen() {
     }
     const fireDate = dtToDate(r.datetime);
     if (Number.isNaN(fireDate.getTime())) return;
+    // Prompt for OS-level notification permission on first save.
+    await ensureNotificationPermission();
     await schedule({
       id: r.id,
       namespace: 'reminder',

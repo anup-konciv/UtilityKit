@@ -5,9 +5,10 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
+import DateField from '@/components/DateField';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
-import { schedule, cancel } from '@/lib/notifications';
+import { schedule, cancel, ensureNotificationPermission } from '@/lib/notifications';
 import { haptics } from '@/lib/haptics';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
@@ -118,18 +119,21 @@ export default function AssignmentTrackerScreen() {
   };
 
   // Schedule a 1-day-before reminder. Cancels for completed assignments.
+  // Uses the dedicated `assignment` namespace so cancellations are cheap.
   const scheduleAssignment = useCallback(async (a: Assignment) => {
     if (a.status === 'completed') {
-      await cancel('custom', `assignment-${a.id}`);
+      await cancel('assignment', a.id);
+      await cancel('custom', `assignment-${a.id}`); // legacy
       return;
     }
     const due = new Date(a.dueDate + 'T09:00:00');
     if (Number.isNaN(due.getTime())) return;
     const fireAt = new Date(due.getTime() - 24 * 60 * 60 * 1000);
     if (fireAt.getTime() <= Date.now()) return;
+    await ensureNotificationPermission();
     await schedule({
-      id: `assignment-${a.id}`,
-      namespace: 'custom',
+      id: a.id,
+      namespace: 'assignment',
       title: `${a.title} due tomorrow`,
       body: `${a.subject}${a.description ? ` — ${a.description.slice(0, 80)}` : ''}`,
       date: fireAt,
@@ -193,7 +197,8 @@ export default function AssignmentTrackerScreen() {
         onPress: () => {
           haptics.warning();
           persist(assignments.filter(a => a.id !== id));
-          void cancel('custom', `assignment-${id}`);
+          void cancel('assignment', id);
+          void cancel('custom', `assignment-${id}`); // legacy
         },
       },
     ]);
@@ -349,9 +354,11 @@ export default function AssignmentTrackerScreen() {
             </ScrollView>
 
             <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Due Date</Text>
-            <TextInput
-              style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-              value={dueDate} onChangeText={setDueDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textMuted}
+            <DateField
+              value={dueDate}
+              onChange={setDueDate}
+              accent={ACCENT}
+              placeholder="When is it due?"
             />
 
             <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Priority</Text>

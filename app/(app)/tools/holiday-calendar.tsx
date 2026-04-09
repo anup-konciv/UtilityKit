@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -123,6 +123,10 @@ export default function HolidayCalendarScreen() {
   const [formDay, setFormDay] = useState('');
   const [formMonth, setFormMonth] = useState('');
   const [formYear, setFormYear] = useState('');
+  // Refs for auto-jumping Day → Month → Year inputs.
+  const dayRef = useRef<TextInput>(null);
+  const monthRef = useRef<TextInput>(null);
+  const yearRef = useRef<TextInput>(null);
 
   useEffect(() => {
     loadJSON<Holiday[]>(KEYS.customHolidays, []).then(setCustomHolidays);
@@ -402,31 +406,48 @@ export default function HolidayCalendarScreen() {
               <View style={styles.fieldHalf}>
                 <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Day (1–31) *</Text>
                 <TextInput
+                  ref={dayRef}
                   style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                   placeholder="15"
                   placeholderTextColor={colors.textMuted}
                   keyboardType="number-pad"
                   value={formDay}
-                  onChangeText={setFormDay}
+                  onChangeText={v => {
+                    setFormDay(v);
+                    if (v.length === 2 || (v.length === 1 && parseInt(v, 10) > 3)) {
+                      monthRef.current?.focus();
+                    }
+                  }}
                   maxLength={2}
+                  returnKeyType="next"
+                  onSubmitEditing={() => monthRef.current?.focus()}
                 />
               </View>
               <View style={styles.fieldHalf}>
                 <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Month (1–12) *</Text>
                 <TextInput
+                  ref={monthRef}
                   style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
                   placeholder="8"
                   placeholderTextColor={colors.textMuted}
                   keyboardType="number-pad"
                   value={formMonth}
-                  onChangeText={setFormMonth}
+                  onChangeText={v => {
+                    setFormMonth(v);
+                    if (v.length === 2 || (v.length === 1 && parseInt(v, 10) > 1)) {
+                      yearRef.current?.focus();
+                    }
+                  }}
                   maxLength={2}
+                  returnKeyType="next"
+                  onSubmitEditing={() => yearRef.current?.focus()}
                 />
               </View>
             </View>
 
             <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Year (optional — leave blank to recur)</Text>
             <TextInput
+              ref={yearRef}
               style={[styles.input, { backgroundColor: colors.inputBg, color: colors.text, borderColor: colors.border }]}
               placeholder="2026"
               placeholderTextColor={colors.textMuted}
@@ -434,6 +455,7 @@ export default function HolidayCalendarScreen() {
               value={formYear}
               onChangeText={setFormYear}
               maxLength={4}
+              returnKeyType="done"
             />
 
             <TouchableOpacity

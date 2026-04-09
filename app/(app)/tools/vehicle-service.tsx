@@ -5,9 +5,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
+import DateField from '@/components/DateField';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
-import { schedule, cancel } from '@/lib/notifications';
+import { schedule, cancel, ensureNotificationPermission } from '@/lib/notifications';
 import { haptics } from '@/lib/haptics';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
@@ -162,15 +163,20 @@ export default function VehicleServiceScreen() {
 
   // Schedule a service-due notification 7 days before the next service
   // is due. Cancels first so re-logging a service moves the notification.
+  // Uses the dedicated `vehicle` namespace so cancellations are cheap.
   const scheduleVehicleReminder = useCallback(async (v: Vehicle) => {
+    await cancel('vehicle', v.id);
+    // Also clear any legacy schedule from when this used the `custom`
+    // namespace, so upgrading users don't end up with double reminders.
     await cancel('custom', `vehicle-${v.id}`);
     const due = getNextDueDate(v);
     due.setHours(9, 0, 0, 0);
     const fireAt = new Date(due.getTime() - 7 * 24 * 60 * 60 * 1000);
     if (fireAt.getTime() <= Date.now()) return;
+    await ensureNotificationPermission();
     await schedule({
-      id: `vehicle-${v.id}`,
-      namespace: 'custom',
+      id: v.id,
+      namespace: 'vehicle',
       title: `${v.name} service due in 1 week`,
       body: `Last serviced ${v.lastServiceDate}. Book ahead.`,
       date: fireAt,
@@ -286,6 +292,8 @@ export default function VehicleServiceScreen() {
         onPress: () => {
           haptics.warning();
           persist({ vehicles: store.vehicles.filter(v => v.id !== id) });
+          void cancel('vehicle', id);
+          // Clear legacy schedule too.
           void cancel('custom', `vehicle-${id}`);
           setShowDetail(null);
         },
@@ -513,11 +521,13 @@ export default function VehicleServiceScreen() {
               </View>
             </View>
 
-            <Text style={[styles.fieldLabel, { color: colors.textSub }]}>Last Service Date (YYYY-MM-DD)</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-              value={addLastDate} onChangeText={setAddLastDate}
-              placeholder={todayISO()} placeholderTextColor={colors.textMuted}
+            <Text style={[styles.fieldLabel, { color: colors.textSub }]}>Last Service Date</Text>
+            <DateField
+              value={addLastDate}
+              onChange={setAddLastDate}
+              accent={ACCENT}
+              placeholder="When was it last serviced?"
+              maxDate={todayISO()}
             />
           </ScrollView>
 
@@ -755,11 +765,13 @@ export default function VehicleServiceScreen() {
               />
             )}
 
-            <Text style={[styles.fieldLabel, { color: colors.textSub }]}>Date (YYYY-MM-DD)</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-              value={logDate} onChangeText={setLogDate}
-              placeholder={todayISO()} placeholderTextColor={colors.textMuted}
+            <Text style={[styles.fieldLabel, { color: colors.textSub }]}>Date</Text>
+            <DateField
+              value={logDate}
+              onChange={setLogDate}
+              accent={ACCENT}
+              placeholder="Date of service"
+              maxDate={todayISO()}
             />
 
             <Text style={[styles.fieldLabel, { color: colors.textSub }]}>Cost ({'\u20B9'})</Text>
@@ -814,11 +826,12 @@ export default function VehicleServiceScreen() {
           keyExtractor={v => v.id}
           renderItem={renderCard}
           ListHeaderComponent={
+            // No inner horizontal padding — `contentContainerStyle` already
+            // pads the FlatList. Wrapping the header in a second padded
+            // View was making the summary + banner narrower than the cards.
             <>
-              <View style={{ paddingHorizontal: Spacing.lg }}>
-                {renderSummary()}
-                {renderCostBanner()}
-              </View>
+              {renderSummary()}
+              {renderCostBanner()}
             </>
           }
           ListEmptyComponent={

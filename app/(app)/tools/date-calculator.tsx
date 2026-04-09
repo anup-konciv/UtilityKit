@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
+import DateField from '@/components/DateField';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 import { useToolHistory } from '@/lib/use-tool-history';
@@ -115,17 +116,12 @@ export default function DateCalculatorScreen() {
         <>
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={styles.cardLabel}>Start Date</Text>
-            <TextInput
-              style={[styles.dateInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+            <DateField
               value={dateA}
-              onChangeText={setDateA}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.textMuted}
-              maxLength={10}
+              onChange={setDateA}
+              accent={ACCENT}
+              placeholder="Pick start date"
             />
-            <TouchableOpacity onPress={() => setDateA(todayISO())}>
-              <Text style={[styles.todayLink, { color: ACCENT }]}>Today</Text>
-            </TouchableOpacity>
           </View>
 
           <View style={{ alignItems: 'center', marginVertical: Spacing.sm }}>
@@ -134,17 +130,12 @@ export default function DateCalculatorScreen() {
 
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={styles.cardLabel}>End Date</Text>
-            <TextInput
-              style={[styles.dateInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+            <DateField
               value={dateB}
-              onChangeText={setDateB}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.textMuted}
-              maxLength={10}
+              onChange={setDateB}
+              accent={ACCENT}
+              placeholder="Pick end date"
             />
-            <TouchableOpacity onPress={() => setDateB(todayISO())}>
-              <Text style={[styles.todayLink, { color: ACCENT }]}>Today</Text>
-            </TouchableOpacity>
           </View>
 
           {betweenResult && (
@@ -187,17 +178,12 @@ export default function DateCalculatorScreen() {
         <>
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={styles.cardLabel}>Start Date</Text>
-            <TextInput
-              style={[styles.dateInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+            <DateField
               value={startDate}
-              onChangeText={setStartDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.textMuted}
-              maxLength={10}
+              onChange={setStartDate}
+              accent={ACCENT}
+              placeholder="Pick start date"
             />
-            <TouchableOpacity onPress={() => setStartDate(todayISO())}>
-              <Text style={[styles.todayLink, { color: ACCENT }]}>Today</Text>
-            </TouchableOpacity>
           </View>
 
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>

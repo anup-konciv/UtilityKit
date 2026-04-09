@@ -16,7 +16,7 @@ import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 import { withAlpha } from '@/lib/color-utils';
 import { KEYS, loadJSON, saveJSON } from '@/lib/storage';
-import { schedule, cancel } from '@/lib/notifications';
+import { schedule, cancel, ensureNotificationPermission } from '@/lib/notifications';
 import { haptics } from '@/lib/haptics';
 import EmptyState from '@/components/EmptyState';
 
@@ -58,7 +58,25 @@ type Habit = {
   category: HabitCategory;
   createdAt: string;
   bestStreak: number;
+  /**
+   * Hour-of-day (0-23) when the daily reminder fires. Optional so existing
+   * habits keep working — the default of 9 is applied at scheduling time.
+   */
+  reminderHour?: number;
 };
+
+// Common reminder hours that match real habit anchors. The picker shows
+// these as friendly labels rather than asking users to type a time.
+const REMINDER_HOURS: { hour: number; label: string }[] = [
+  { hour: 6,  label: '6 AM' },
+  { hour: 7,  label: '7 AM' },
+  { hour: 8,  label: '8 AM' },
+  { hour: 9,  label: '9 AM' },
+  { hour: 12, label: 'Noon' },
+  { hour: 18, label: '6 PM' },
+  { hour: 20, label: '8 PM' },
+  { hour: 21, label: '9 PM' },
+];
 
 type HabitLogs = Record<string, string[]>; // "YYYY-MM-DD" -> habit IDs
 
@@ -163,6 +181,7 @@ export default function HabitTrackerScreen() {
   const [modalName, setModalName] = useState('');
   const [modalColor, setModalColor] = useState(COLOR_PALETTE[0]);
   const [modalCategory, setModalCategory] = useState<HabitCategory>('Other');
+  const [modalReminderHour, setModalReminderHour] = useState<number>(9);
 
   // View toggles
   const [calView, setCalView] = useState<CalendarView>('week');
@@ -255,6 +274,7 @@ export default function HabitTrackerScreen() {
     setModalName('');
     setModalColor(COLOR_PALETTE[0]);
     setModalCategory('Other');
+    setModalReminderHour(9);
     setShowAdd(true);
   }, []);
 
@@ -263,6 +283,7 @@ export default function HabitTrackerScreen() {
     setModalName(habit.name);
     setModalColor(habit.color);
     setModalCategory(habit.category);
+    setModalReminderHour(habit.reminderHour ?? 9);
     setShowAdd(true);
   }, []);
 
@@ -272,12 +293,12 @@ export default function HabitTrackerScreen() {
     setModalName('');
   }, []);
 
-  // Schedule a daily 9 AM reminder for the habit. Tools will need an
-  // expo-notifications install before these actually fire — until then the
-  // call is a graceful no-op (see lib/notifications.ts).
+  // Schedule the daily reminder at the user-configured hour. Falls back to
+  // 9 AM for habits created before this field existed.
   const scheduleHabitReminder = useCallback(async (habit: Habit) => {
+    await ensureNotificationPermission();
     const at = new Date();
-    at.setHours(9, 0, 0, 0);
+    at.setHours(habit.reminderHour ?? 9, 0, 0, 0);
     await schedule({
       id: habit.id,
       namespace: 'habit',
@@ -302,6 +323,7 @@ export default function HabitTrackerScreen() {
         name: trimmed,
         color: modalColor,
         category: modalCategory,
+        reminderHour: modalReminderHour,
       };
       persistHabits(habits.map(h => (h.id === editTarget.id ? updated : h)));
       void scheduleHabitReminder(updated);
@@ -314,13 +336,14 @@ export default function HabitTrackerScreen() {
         category: modalCategory,
         createdAt: new Date().toISOString(),
         bestStreak: 0,
+        reminderHour: modalReminderHour,
       };
       persistHabits([...habits, habit]);
       void scheduleHabitReminder(habit);
     }
     haptics.success();
     closeModal();
-  }, [modalName, modalColor, modalCategory, editTarget, habits, persistHabits, closeModal, scheduleHabitReminder]);
+  }, [modalName, modalColor, modalCategory, modalReminderHour, editTarget, habits, persistHabits, closeModal, scheduleHabitReminder]);
 
   const deleteHabit = useCallback((id: string) => {
     Alert.alert('Delete Habit', 'Remove this habit and all its history?', [
@@ -544,6 +567,33 @@ export default function HabitTrackerScreen() {
               </TouchableOpacity>
             ))}
           </View>
+
+          {/* Reminder time picker */}
+          <Text style={[styles.addLabel, { color: colors.textSub }]}>Reminder time</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 6, paddingVertical: 2 }}
+          >
+            {REMINDER_HOURS.map(slot => {
+              const active = modalReminderHour === slot.hour;
+              return (
+                <TouchableOpacity
+                  key={slot.hour}
+                  onPress={() => setModalReminderHour(slot.hour)}
+                  style={[styles.reminderHourPill, {
+                    backgroundColor: active ? withAlpha(modalColor, '22') : colors.inputBg,
+                    borderColor: active ? modalColor : colors.border,
+                  }]}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.reminderHourText, { color: active ? modalColor : colors.textMuted }]}>
+                    {slot.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
 
           <View style={styles.addActions}>
             <TouchableOpacity
@@ -1116,6 +1166,16 @@ const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
       shadowOpacity: 0.25,
       shadowRadius: 4,
       elevation: 4,
+    },
+    reminderHourPill: {
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: Radii.pill,
+      borderWidth: 1.5,
+    },
+    reminderHourText: {
+      fontFamily: Fonts.semibold,
+      fontSize: 12,
     },
     addActions: {
       flexDirection: 'row',

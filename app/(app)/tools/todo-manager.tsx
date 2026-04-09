@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import ScreenShell from '@/components/ScreenShell';
+import DateField from '@/components/DateField';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 import { hexToRgb } from '@/lib/color-utils';
@@ -467,19 +468,12 @@ export default function TodoManagerScreen() {
           selectionColor={ACCENT}
         />
 
-        <View style={[styles.dateInputRow, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
-          <Ionicons name="calendar-outline" size={18} color={ACCENT_DEEP} />
-          <TextInput
-            style={[styles.dateInput, { color: colors.text }]}
-            value={dueDateInput}
-            onChangeText={(value) => setDueDateInput(sanitizeDateInput(value))}
-            placeholder="Optional due date (YYYY-MM-DD)"
-            placeholderTextColor={colors.textMuted}
-            selectionColor={ACCENT}
-            returnKeyType="done"
-            onSubmitEditing={addTodo}
-          />
-        </View>
+        <DateField
+          value={dueDateInput}
+          onChange={setDueDateInput}
+          accent={ACCENT}
+          placeholder="Optional due date"
+        />
 
         <View style={styles.quickDateRow}>
           {quickDateChips.map((chip) => {

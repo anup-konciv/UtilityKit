@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import {
   Alert,
   FlatList,
@@ -16,7 +16,7 @@ import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 import { pickSeededValue, withAlpha } from '@/lib/color-utils';
 import { KEYS, loadJSON, saveJSON } from '@/lib/storage';
-import { schedule, cancel } from '@/lib/notifications';
+import { schedule, cancel, ensureNotificationPermission } from '@/lib/notifications';
 import { haptics } from '@/lib/haptics';
 import {
   formatBirthdayLabel,
@@ -38,6 +38,8 @@ type BirthdayPalette = {
   contrast: string;
 };
 
+type Gender = 'male' | 'female' | 'other';
+
 type Birthday = {
   id: string;
   name: string;
@@ -45,7 +47,36 @@ type Birthday = {
   month: number;
   year?: number;
   note?: string;
+  /**
+   * Days of advance notice for the reminder. 0 = on the day, 1 = a day
+   * ahead, 7 = a week ahead. Optional so existing entries default to
+   * same-day (matching the previous behaviour).
+   */
+  leadDays?: 0 | 1 | 7;
+  /**
+   * Optional gender — surfaces a small icon on the card so the list is
+   * easier to scan. Existing entries default to undefined which renders no
+   * icon (no implied default).
+   */
+  gender?: Gender;
 };
+
+const LEAD_OPTIONS: { value: 0 | 1 | 7; label: string }[] = [
+  { value: 0, label: 'On the day' },
+  { value: 1, label: '1 day before' },
+  { value: 7, label: '1 week before' },
+];
+
+const GENDER_OPTIONS: { value: Gender; label: string; icon: keyof typeof Ionicons.glyphMap; color: string }[] = [
+  { value: 'male',   label: 'Male',   icon: 'male',           color: '#3B82F6' },
+  { value: 'female', label: 'Female', icon: 'female',         color: '#EC4899' },
+  { value: 'other',  label: 'Other',  icon: 'person-outline', color: '#6366F1' },
+];
+
+function getGenderMeta(g?: Gender) {
+  if (!g) return null;
+  return GENDER_OPTIONS.find(o => o.value === g) ?? null;
+}
 
 type FilterMode = 'all' | 'soon' | 'month';
 
@@ -57,6 +88,8 @@ type BirthdayForm = {
   month: string;
   year: string;
   note: string;
+  leadDays: 0 | 1 | 7;
+  gender: Gender | null;
 };
 
 type BirthdayCard = Birthday & {
@@ -84,6 +117,8 @@ const EMPTY_FORM: BirthdayForm = {
   month: '',
   year: '',
   note: '',
+  leadDays: 0,
+  gender: null,
 };
 
 const FILTERS: { key: FilterMode; label: string }[] = [
@@ -124,6 +159,11 @@ export default function BirthdayTrackerScreen() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<FilterMode>('all');
 
+  // Refs for auto-jumping Day → Month → Year text inputs.
+  const dayInputRef = useRef<TextInput>(null);
+  const monthInputRef = useRef<TextInput>(null);
+  const yearInputRef = useRef<TextInput>(null);
+
   useEffect(() => {
     loadJSON<Birthday[]>(KEYS.birthdays, []).then((saved) => {
       setBirthdays(Array.isArray(saved) ? saved : []);
@@ -152,6 +192,8 @@ export default function BirthdayTrackerScreen() {
       month: String(item.month),
       year: item.year != null ? String(item.year) : '',
       note: item.note ?? '',
+      leadDays: item.leadDays ?? 0,
+      gender: item.gender ?? null,
     });
   }
 
@@ -344,7 +386,13 @@ export default function BirthdayTrackerScreen() {
 
     let saved: Birthday;
     if (form.editing) {
-      saved = { ...form.editing, name, day, month, year, note: note || undefined };
+      saved = {
+        ...form.editing,
+        name, day, month, year,
+        note: note || undefined,
+        leadDays: form.leadDays,
+        gender: form.gender ?? undefined,
+      };
       persist(
         birthdays.map((item) => (item.id === form.editing?.id ? saved : item)),
       );
@@ -356,6 +404,8 @@ export default function BirthdayTrackerScreen() {
         month,
         year,
         note: note || undefined,
+        leadDays: form.leadDays,
+        gender: form.gender ?? undefined,
       };
       persist([...birthdays, saved]);
     }
@@ -372,17 +422,27 @@ export default function BirthdayTrackerScreen() {
    * year will skip to next year automatically.
    */
   async function scheduleBirthdayReminder(b: Birthday) {
+    await ensureNotificationPermission();
     const now = new Date();
     const year = now.getFullYear();
+    const lead = b.leadDays ?? 0;
     let target = new Date(year, b.month - 1, b.day, 9, 0, 0);
+    target.setDate(target.getDate() - lead);
+    // If the lead-adjusted target is in the past, jump to next year's
+    // birthday so the reminder still fires once per year.
     if (target.getTime() < now.getTime()) {
       target = new Date(year + 1, b.month - 1, b.day, 9, 0, 0);
+      target.setDate(target.getDate() - lead);
     }
     if (Number.isNaN(target.getTime())) return;
+    const titleByLead =
+      lead === 0 ? `🎂 ${b.name}'s birthday today`
+      : lead === 1 ? `🎂 ${b.name}'s birthday tomorrow`
+      : `🎂 ${b.name}'s birthday in 1 week`;
     await schedule({
       id: b.id,
       namespace: 'birthday',
-      title: `🎂 ${b.name}'s birthday today`,
+      title: titleByLead,
       body: b.note ? `Don't forget: ${b.note}` : 'Send a message or call to wish them.',
       date: target,
       repeat: 'none',
@@ -464,9 +524,19 @@ export default function BirthdayTrackerScreen() {
             </View>
             <View style={styles.cardBody}>
               <View style={styles.cardNameRow}>
-                <Text style={[styles.cardName, { color: colors.text }]} numberOfLines={1}>
-                  {entry.name}
-                </Text>
+                <View style={styles.cardNameInner}>
+                  {(() => {
+                    const g = getGenderMeta(entry.gender);
+                    return g ? (
+                      <View style={[styles.genderChip, { backgroundColor: withAlpha(g.color, '18') }]}>
+                        <Ionicons name={g.icon} size={11} color={g.color} />
+                      </View>
+                    ) : null;
+                  })()}
+                  <Text style={[styles.cardName, { color: colors.text }]} numberOfLines={1}>
+                    {entry.name}
+                  </Text>
+                </View>
                 <View style={[styles.statusBadge, { backgroundColor: badgeBackground }]}>
                   <Text style={[styles.statusBadgeText, { color: badgeTextColor }]}>
                     {isToday
@@ -671,38 +741,88 @@ export default function BirthdayTrackerScreen() {
               selectionColor={ACCENT}
             />
 
+            <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Gender (optional)</Text>
+            <View style={styles.genderRow}>
+              {GENDER_OPTIONS.map(opt => {
+                const active = form.gender === opt.value;
+                return (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[
+                      styles.genderPill,
+                      {
+                        borderColor: active ? opt.color : colors.border,
+                        backgroundColor: active ? withAlpha(opt.color, '18') : colors.inputBg,
+                      },
+                    ]}
+                    // Tap a second time to clear the selection — this is the
+                    // only way to remove gender once set.
+                    onPress={() => setForm(c => ({ ...c, gender: active ? null : opt.value }))}
+                  >
+                    <Ionicons name={opt.icon} size={14} color={active ? opt.color : colors.textMuted} />
+                    <Text style={[styles.genderPillText, { color: active ? opt.color : colors.textMuted }]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
             <View style={styles.dateFieldRow}>
               <View style={styles.dateField}>
                 <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Day</Text>
                 <TextInput
+                  ref={dayInputRef}
                   style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                   value={form.day}
-                  onChangeText={(value) => updateFormField('day', sanitizeNumericInput(value, 2))}
+                  onChangeText={(value) => {
+                    const sanitized = sanitizeNumericInput(value, 2);
+                    updateFormField('day', sanitized);
+                    // Auto-jump to month once the day looks complete: either
+                    // a 2-digit value or a 1-digit value > 3 (no valid 2-digit
+                    // day starts with 4-9 anyway).
+                    if (sanitized.length === 2 || (sanitized.length === 1 && parseInt(sanitized, 10) > 3)) {
+                      monthInputRef.current?.focus();
+                    }
+                  }}
                   placeholder="DD"
                   placeholderTextColor={colors.textMuted}
                   keyboardType="number-pad"
                   maxLength={2}
                   textAlign="center"
                   selectionColor={ACCENT}
+                  returnKeyType="next"
+                  onSubmitEditing={() => monthInputRef.current?.focus()}
                 />
               </View>
               <View style={styles.dateField}>
                 <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Month</Text>
                 <TextInput
+                  ref={monthInputRef}
                   style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                   value={form.month}
-                  onChangeText={(value) => updateFormField('month', sanitizeNumericInput(value, 2))}
+                  onChangeText={(value) => {
+                    const sanitized = sanitizeNumericInput(value, 2);
+                    updateFormField('month', sanitized);
+                    // Auto-jump to year once the month looks complete.
+                    if (sanitized.length === 2 || (sanitized.length === 1 && parseInt(sanitized, 10) > 1)) {
+                      yearInputRef.current?.focus();
+                    }
+                  }}
                   placeholder="MM"
                   placeholderTextColor={colors.textMuted}
                   keyboardType="number-pad"
                   maxLength={2}
                   textAlign="center"
                   selectionColor={ACCENT}
+                  returnKeyType="next"
+                  onSubmitEditing={() => yearInputRef.current?.focus()}
                 />
               </View>
               <View style={[styles.dateField, styles.yearField]}>
                 <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Year</Text>
                 <TextInput
+                  ref={yearInputRef}
                   style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                   value={form.year}
                   onChangeText={(value) => updateFormField('year', sanitizeNumericInput(value, 4))}
@@ -712,6 +832,7 @@ export default function BirthdayTrackerScreen() {
                   maxLength={4}
                   textAlign="center"
                   selectionColor={ACCENT}
+                  returnKeyType="done"
                 />
               </View>
             </View>
@@ -730,6 +851,30 @@ export default function BirthdayTrackerScreen() {
               selectionColor={ACCENT}
               multiline
             />
+
+            <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Reminder</Text>
+            <View style={styles.leadRow}>
+              {LEAD_OPTIONS.map(opt => {
+                const active = form.leadDays === opt.value;
+                return (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[
+                      styles.leadPill,
+                      {
+                        borderColor: active ? ACCENT : colors.border,
+                        backgroundColor: active ? withAlpha(ACCENT, '18') : colors.inputBg,
+                      },
+                    ]}
+                    onPress={() => setForm(current => ({ ...current, leadDays: opt.value }))}
+                  >
+                    <Text style={[styles.leadPillText, { color: active ? ACCENT : colors.textMuted }]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
             {formPreview ? (
               <LinearGradient
@@ -1090,6 +1235,55 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
     noteInput: {
       minHeight: 88,
       textAlignVertical: 'top',
+    },
+    leadRow: {
+      flexDirection: 'row',
+      gap: 8,
+      flexWrap: 'wrap',
+    },
+    leadPill: {
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: Radii.pill,
+      borderWidth: 1.5,
+    },
+    leadPillText: {
+      fontFamily: Fonts.semibold,
+      fontSize: 12,
+    },
+    genderRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: Spacing.sm,
+    },
+    genderPill: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      paddingVertical: 8,
+      borderRadius: Radii.pill,
+      borderWidth: 1.5,
+    },
+    genderPillText: {
+      fontFamily: Fonts.semibold,
+      fontSize: 12,
+    },
+    // Gender icon on the card — sits inline with the name
+    cardNameInner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      flex: 1,
+      minWidth: 0,
+    },
+    genderChip: {
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     dateFieldRow: {
       flexDirection: 'row',

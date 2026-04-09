@@ -5,8 +5,10 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
+import DateField from '@/components/DateField';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import { schedule, cancel, ensureNotificationPermission } from '@/lib/notifications';
 import EmptyState from '@/components/EmptyState';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
@@ -102,13 +104,34 @@ export default function TravelTrackerScreen() {
     setShowAdd(true);
   };
 
+  // Schedule a "trip starts tomorrow" reminder for the day before the trip
+  // start date, fired at 09:00. No-op for trips already underway / past.
+  const scheduleTrip = useCallback(async (t: Trip) => {
+    const start = new Date(t.startDate + 'T00:00:00');
+    start.setDate(start.getDate() - 1);
+    start.setHours(9, 0, 0, 0);
+    if (start.getTime() <= Date.now()) return;
+    await ensureNotificationPermission();
+    await schedule({
+      id: t.id,
+      namespace: 'travel',
+      title: `Trip to ${t.destination} tomorrow`,
+      body: `Pack your bags — leaving ${t.startDate}`,
+      date: start,
+      repeat: 'none',
+    });
+  }, []);
+
   const saveTrip = () => {
     if (!dest.trim()) return;
     if (editId) {
-      persist(trips.map(t => t.id === editId ? {
+      const updated = trips.map(t => t.id === editId ? {
         ...t, destination: dest.trim(), startDate, endDate,
         budget: parseFloat(budget) || 0, notes: notes.trim(),
-      } : t));
+      } : t);
+      persist(updated);
+      const next = updated.find(t => t.id === editId);
+      if (next) void scheduleTrip(next);
     } else {
       const trip: Trip = {
         id: uid(), destination: dest.trim(), startDate, endDate,
@@ -116,6 +139,7 @@ export default function TravelTrackerScreen() {
         status: 'planning', notes: notes.trim(), expenses: [],
       };
       persist([trip, ...trips]);
+      void scheduleTrip(trip);
     }
     setShowAdd(false);
   };
@@ -125,6 +149,7 @@ export default function TravelTrackerScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => {
         persist(trips.filter(t => t.id !== id));
+        void cancel('travel', id);
         if (selectedTrip?.id === id) setSelectedTrip(null);
       }},
     ]);
@@ -320,22 +345,22 @@ export default function TravelTrackerScreen() {
               value={dest} onChangeText={setDest} placeholder="Where to?" placeholderTextColor={colors.textMuted} autoFocus
             />
 
-            <View style={styles.rowInputs}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Start Date</Text>
-                <TextInput
-                  style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                  value={startDate} onChangeText={setStartDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textMuted}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>End Date</Text>
-                <TextInput
-                  style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-                  value={endDate} onChangeText={setEndDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textMuted}
-                />
-              </View>
-            </View>
+            <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Start Date</Text>
+            <DateField
+              value={startDate}
+              onChange={setStartDate}
+              accent={ACCENT}
+              placeholder="When does the trip begin?"
+            />
+
+            <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>End Date</Text>
+            <DateField
+              value={endDate}
+              onChange={setEndDate}
+              accent={ACCENT}
+              placeholder="When does it end?"
+              minDate={startDate || undefined}
+            />
 
             <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Budget</Text>
             <TextInput

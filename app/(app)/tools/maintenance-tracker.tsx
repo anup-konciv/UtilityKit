@@ -5,8 +5,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
+import DateField from '@/components/DateField';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import { schedule, cancel, ensureNotificationPermission } from '@/lib/notifications';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 const ACCENT = '#E67E22';
@@ -184,6 +186,32 @@ export default function MaintenanceTrackerScreen() {
     saveJSON(KEYS.maintenanceTracker, s);
   }, []);
 
+  // Schedule a "service due" reminder 7 days before next due date for the
+  // given appliance. Cancels any prior schedule first so updates dedupe.
+  const scheduleAppliance = useCallback(async (a: Appliance) => {
+    const dueDate = getNextDueDate(a);
+    const remindAt = new Date(dueDate);
+    remindAt.setDate(remindAt.getDate() - 7);
+    remindAt.setHours(9, 0, 0, 0);
+    if (remindAt.getTime() <= Date.now()) {
+      // Either overdue already or within 7 days — fire tomorrow morning so
+      // the user still gets a near-term nudge instead of nothing.
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(9, 0, 0, 0);
+      remindAt.setTime(tomorrow.getTime());
+    }
+    await ensureNotificationPermission();
+    await schedule({
+      id: a.id,
+      namespace: 'maintenance',
+      title: `${a.name} due soon`,
+      body: `Next service ${formatDate(dateToISO(dueDate))}`,
+      date: remindAt,
+      repeat: 'none',
+    });
+  }, []);
+
   const detailAppliance = store.appliances.find(a => a.id === showDetail);
 
   /* ───── Sorted & filtered list ───── */
@@ -280,6 +308,7 @@ export default function MaintenanceTrackerScreen() {
       createdAt: todayISO(),
     };
     persist({ appliances: [...store.appliances, newItem] });
+    void scheduleAppliance(newItem);
     resetAddForm();
     setShowAdd(false);
   };
@@ -312,6 +341,9 @@ export default function MaintenanceTrackerScreen() {
         : a
     );
     persist({ appliances: updated });
+    // Reschedule the next due reminder now that the service date has moved.
+    const next = updated.find(a => a.id === detailAppliance.id);
+    if (next) void scheduleAppliance(next);
     setLogDate(todayISO()); setLogCost(''); setLogNote(''); setLogTech('');
     setShowLogService(false);
   };
@@ -324,6 +356,7 @@ export default function MaintenanceTrackerScreen() {
         text: 'Delete', style: 'destructive',
         onPress: () => {
           persist({ appliances: store.appliances.filter(a => a.id !== id) });
+          void cancel('maintenance', id);
           setShowDetail(null);
         },
       },
@@ -339,6 +372,9 @@ export default function MaintenanceTrackerScreen() {
         : a
     );
     persist({ appliances: updated });
+    // Frequency may have changed, so the due date may have shifted too.
+    const next = updated.find(a => a.id === detailAppliance.id);
+    if (next) void scheduleAppliance(next);
     setEditMode(false);
   };
 
@@ -558,13 +594,13 @@ export default function MaintenanceTrackerScreen() {
               </View>
             </View>
 
-            <Text style={[styles.fieldLabel, { color: colors.textSub }]}>Last Service Date (YYYY-MM-DD)</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+            <Text style={[styles.fieldLabel, { color: colors.textSub }]}>Last Service Date</Text>
+            <DateField
               value={addLastDate}
-              onChangeText={setAddLastDate}
-              placeholder={todayISO()}
-              placeholderTextColor={colors.textMuted}
+              onChange={setAddLastDate}
+              accent={ACCENT}
+              placeholder="When was it last serviced?"
+              maxDate={todayISO()}
             />
           </ScrollView>
 
@@ -755,11 +791,13 @@ export default function MaintenanceTrackerScreen() {
             </TouchableOpacity>
           </View>
 
-          <Text style={[styles.fieldLabel, { color: colors.textSub }]}>Service Date (YYYY-MM-DD)</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-            value={logDate} onChangeText={setLogDate}
-            placeholder={todayISO()} placeholderTextColor={colors.textMuted}
+          <Text style={[styles.fieldLabel, { color: colors.textSub }]}>Service Date</Text>
+          <DateField
+            value={logDate}
+            onChange={setLogDate}
+            accent={ACCENT}
+            placeholder="Date of service"
+            maxDate={todayISO()}
           />
 
           <Text style={[styles.fieldLabel, { color: colors.textSub }]}>Cost ({'\u20B9'})</Text>

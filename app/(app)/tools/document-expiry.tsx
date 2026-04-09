@@ -5,9 +5,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
+import DateField from '@/components/DateField';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
-import { schedule, cancel } from '@/lib/notifications';
+import { schedule, cancel, ensureNotificationPermission } from '@/lib/notifications';
 import { haptics } from '@/lib/haptics';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
@@ -205,24 +206,43 @@ export default function DocumentExpiryScreen() {
     setFormCategory(preset.category);
   };
 
-  // Schedule a 30-day-before reminder for a document. Cancels first so
-  // editing the date doesn't leave a stale notification behind.
+  // Multi-stage reminders so the user gets progressively urgent warnings as
+  // an expiry approaches: 30 days out, 7 days out, then 1 day out. Each
+  // stage uses a sub-id (`<docId>:30d` etc) so cancelling the document
+  // wipes all stages in one go via `cancelDocStages`.
+  const cancelDocStages = useCallback(async (docId: string) => {
+    await cancel('doc-expiry', `${docId}:30d`);
+    await cancel('doc-expiry', `${docId}:7d`);
+    await cancel('doc-expiry', `${docId}:1d`);
+    // Also clear the legacy single-id schedule older app versions used so
+    // upgrading users don't have an orphan stuck.
+    await cancel('doc-expiry', docId);
+  }, []);
+
   const scheduleDocReminder = useCallback(async (doc: Document) => {
-    await cancel('doc-expiry', doc.id);
+    await ensureNotificationPermission();
+    await cancelDocStages(doc.id);
     const expiry = new Date(doc.expiryDate + 'T09:00:00');
     if (Number.isNaN(expiry.getTime())) return;
-    const fireAt = new Date(expiry.getTime() - 30 * 24 * 60 * 60 * 1000);
-    if (fireAt.getTime() <= Date.now()) return;
-    await schedule({
-      id: doc.id,
-      namespace: 'doc-expiry',
-      title: `${doc.name} expires in 30 days`,
-      body: `Renew before ${doc.expiryDate}`,
-      date: fireAt,
-      repeat: 'none',
-      data: { documentId: doc.id },
-    });
-  }, []);
+    const stages: { offsetDays: number; suffix: string; phrase: string }[] = [
+      { offsetDays: 30, suffix: '30d', phrase: 'expires in 30 days' },
+      { offsetDays: 7,  suffix: '7d',  phrase: 'expires in 1 week' },
+      { offsetDays: 1,  suffix: '1d',  phrase: 'expires tomorrow' },
+    ];
+    for (const stage of stages) {
+      const fireAt = new Date(expiry.getTime() - stage.offsetDays * 24 * 60 * 60 * 1000);
+      if (fireAt.getTime() <= Date.now()) continue;
+      await schedule({
+        id: `${doc.id}:${stage.suffix}`,
+        namespace: 'doc-expiry',
+        title: `${doc.name} ${stage.phrase}`,
+        body: `Renew before ${doc.expiryDate}`,
+        date: fireAt,
+        repeat: 'none',
+        data: { documentId: doc.id, stage: stage.suffix },
+      });
+    }
+  }, [cancelDocStages]);
 
   const saveDocument = () => {
     if (!formName.trim() || !formExpiryDate.trim()) return;
@@ -273,7 +293,7 @@ export default function DocumentExpiryScreen() {
         onPress: () => {
           haptics.warning();
           persist(documents.filter(d => d.id !== id));
-          void cancel('doc-expiry', id);
+          void cancelDocStages(id);
           setShowDetailModal(null);
         },
       },
@@ -521,23 +541,23 @@ export default function DocumentExpiryScreen() {
               />
 
               {/* Issue date */}
-              <Text style={[styles.fieldLabel, { color: colors.textSub }]}>Issue Date (YYYY-MM-DD)</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+              <Text style={[styles.fieldLabel, { color: colors.textSub }]}>Issue Date</Text>
+              <DateField
                 value={formIssueDate}
-                onChangeText={setFormIssueDate}
-                placeholder={todayISO()}
-                placeholderTextColor={colors.textMuted}
+                onChange={setFormIssueDate}
+                accent={ACCENT}
+                placeholder="When was it issued?"
+                maxDate={todayISO()}
               />
 
               {/* Expiry date */}
-              <Text style={[styles.fieldLabel, { color: colors.textSub }]}>Expiry Date (YYYY-MM-DD)</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+              <Text style={[styles.fieldLabel, { color: colors.textSub }]}>Expiry Date</Text>
+              <DateField
                 value={formExpiryDate}
-                onChangeText={setFormExpiryDate}
-                placeholder="e.g. 2030-12-31"
-                placeholderTextColor={colors.textMuted}
+                onChange={setFormExpiryDate}
+                accent={ACCENT}
+                placeholder="When does it expire?"
+                minDate={formIssueDate || undefined}
               />
 
               {/* Notes */}

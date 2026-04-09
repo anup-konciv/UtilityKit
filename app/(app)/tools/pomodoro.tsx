@@ -5,7 +5,7 @@ import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
 import { haptics } from '@/lib/haptics';
-import { fireNow } from '@/lib/notifications';
+import { schedule, cancel, ensureNotificationPermission } from '@/lib/notifications';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -157,25 +157,45 @@ export default function PomodoroScreen() {
     }
   }, [persistToday]);
 
-  // Timer complete
+  // Timer complete (foreground path)
+  // The OS-level notification scheduled in `start()` fires regardless, so
+  // we don't need to fire another one here — the foreground transition is
+  // purely a state update.
   const onTimerComplete = useCallback(() => {
     clearTick();
     setRunning(false);
     haptics.success();
-    // Fire a local notification so the user knows even if the app is backgrounded.
-    // No-op until expo-notifications is installed (see lib/notifications.ts).
-    const wasWork = sessionTypeRef.current === 'work';
-    void fireNow(
-      wasWork ? 'Focus session complete' : 'Break finished',
-      wasWork ? 'Time for a break — you earned it.' : 'Back to work? Tap to start the next session.'
-    );
+    void cancel('pomodoro', 'session'); // already fired, just clean the index
     goToNextSession(sessionTypeRef.current);
   }, [clearTick, goToNextSession]);
 
   // Start
+  // We schedule an OS notification at the timer's end time so the alert
+  // fires even if the phone sleeps or the app gets backgrounded. The JS
+  // interval is kept for live UI updates and to drive `onTimerComplete`
+  // when the screen is foregrounded — both paths produce the same outcome.
   const start = useCallback(() => {
     setRunning(true);
-    endTimeRef.current = Date.now() + secondsLeft * 1000;
+    const endAt = Date.now() + secondsLeft * 1000;
+    endTimeRef.current = endAt;
+
+    // Fire-and-forget permission prompt the first time the user starts a
+    // session. Subsequent calls are no-ops (OS won't re-prompt).
+    void (async () => {
+      await ensureNotificationPermission();
+      const wasWork = sessionTypeRef.current === 'work';
+      await schedule({
+        id: 'session',
+        namespace: 'pomodoro',
+        title: wasWork ? 'Focus session complete' : 'Break finished',
+        body: wasWork
+          ? 'Time for a break — you earned it.'
+          : 'Back to work? Tap to start the next session.',
+        date: new Date(endAt),
+        repeat: 'none',
+      });
+    })();
+
     intervalRef.current = setInterval(() => {
       const left = Math.round((endTimeRef.current - Date.now()) / 1000);
       if (left <= 0) {
@@ -187,16 +207,19 @@ export default function PomodoroScreen() {
     }, 250);
   }, [secondsLeft, onTimerComplete]);
 
-  // Pause
+  // Pause — also cancel the pending OS notification so it doesn't fire after
+  // the user has stopped the session.
   const pause = useCallback(() => {
     clearTick();
     setRunning(false);
+    void cancel('pomodoro', 'session');
   }, [clearTick]);
 
   // Reset current session
   const reset = useCallback(() => {
     clearTick();
     setRunning(false);
+    void cancel('pomodoro', 'session');
     const dur = sessionType === 'work'
       ? settings.workMin * 60
       : sessionType === 'shortBreak'
@@ -206,8 +229,12 @@ export default function PomodoroScreen() {
     setTotalSeconds(dur);
   }, [clearTick, sessionType, settings]);
 
-  // Cleanup
-  useEffect(() => () => clearTick(), [clearTick]);
+  // Cleanup — cancel any pending OS notification when the screen unmounts so
+  // a stale "session complete" alert doesn't fire after the user has left.
+  useEffect(() => () => {
+    clearTick();
+    void cancel('pomodoro', 'session');
+  }, [clearTick]);
 
   // Progress (0 to 1)
   const progress = totalSeconds > 0 ? 1 - secondsLeft / totalSeconds : 0;

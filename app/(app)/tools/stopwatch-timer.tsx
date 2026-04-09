@@ -1,10 +1,10 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, FlatList } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
+import { schedule, cancel, ensureNotificationPermission } from '@/lib/notifications';
 
 type Mode = 'stopwatch' | 'countdown';
 
@@ -54,6 +54,9 @@ export default function StopwatchTimerScreen() {
   };
 
   // Countdown
+  // We schedule an OS notification at the timer's end so the alert fires
+  // even when the phone sleeps. The JS interval keeps the on-screen display
+  // updating while the app is foregrounded.
   const ctStart = useCallback(() => {
     const target = ((parseInt(ctHours) || 0) * 3600 + (parseInt(ctMins) || 0) * 60 + (parseInt(ctSecs) || 0)) * 1000;
     if (!target) return;
@@ -62,6 +65,17 @@ export default function StopwatchTimerScreen() {
     setCtFinished(false);
     setRunning(true);
     ctEndRef.current = Date.now() + remaining;
+    void (async () => {
+      await ensureNotificationPermission();
+      await schedule({
+        id: 'countdown',
+        namespace: 'pomodoro',
+        title: "Time's up",
+        body: 'Your countdown timer has finished.',
+        date: new Date(ctEndRef.current),
+        repeat: 'none',
+      });
+    })();
     intervalRef.current = setInterval(() => {
       const left = ctEndRef.current - Date.now();
       if (left <= 0) {
@@ -69,17 +83,31 @@ export default function StopwatchTimerScreen() {
         setCtMs(0);
         setRunning(false);
         setCtFinished(true);
+        void cancel('pomodoro', 'countdown');
       } else {
         setCtMs(left);
       }
     }, 30);
   }, [ctHours, ctMins, ctSecs, ctMs]);
 
-  const ctPause = () => { clearTick(); setRunning(false); };
+  const ctPause = () => {
+    clearTick();
+    setRunning(false);
+    void cancel('pomodoro', 'countdown');
+  };
 
-  const ctReset = () => { clearTick(); setRunning(false); setCtMs(0); setCtFinished(false); };
+  const ctReset = () => {
+    clearTick();
+    setRunning(false);
+    setCtMs(0);
+    setCtFinished(false);
+    void cancel('pomodoro', 'countdown');
+  };
 
-  useEffect(() => () => clearTick(), []);
+  useEffect(() => () => {
+    clearTick();
+    void cancel('pomodoro', 'countdown');
+  }, []);
 
   const switchMode = (m: Mode) => {
     clearTick(); setRunning(false);
@@ -92,16 +120,7 @@ export default function StopwatchTimerScreen() {
   const ctDisplayColor = ctFinished ? colors.error : running ? '#F97316' : colors.text;
 
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top', 'bottom']}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.bg, borderColor: colors.border }]}>
-          <Ionicons name="chevron-back" size={22} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.title, { color: '#F97316' }]}>Stopwatch & Timer</Text>
-        <View style={{ width: 38 }} />
-      </View>
-
+    <ScreenShell title="Stopwatch & Timer" accentColor="#F97316" scrollable={false}>
       {/* Mode Toggle */}
       <View style={[styles.modeToggle, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         {(['stopwatch', 'countdown'] as Mode[]).map((m) => (
@@ -202,17 +221,13 @@ export default function StopwatchTimerScreen() {
           </View>
         </View>
       )}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
 const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
   StyleSheet.create({
-    root: { flex: 1 },
-    header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderBottomWidth: 1, gap: Spacing.sm },
-    backBtn: { width: 38, height: 38, borderRadius: Radii.md, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-    title: { flex: 1, textAlign: 'center', fontSize: 18, fontFamily: Fonts.bold },
-    modeToggle: { flexDirection: 'row', margin: Spacing.lg, borderRadius: Radii.pill, padding: 4, gap: 4, borderWidth: 1 },
+    modeToggle: { flexDirection: 'row', marginBottom: Spacing.lg, borderRadius: Radii.pill, padding: 4, gap: 4, borderWidth: 1 },
     modePill: { flex: 1, paddingVertical: 9, borderRadius: Radii.pill, alignItems: 'center' },
     modePillText: { fontSize: 13, fontFamily: Fonts.semibold },
     body: { flex: 1, alignItems: 'center', paddingTop: Spacing.xl },

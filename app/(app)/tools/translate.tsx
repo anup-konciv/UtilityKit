@@ -8,6 +8,8 @@ import {
   Modal,
   FlatList,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
@@ -85,6 +87,10 @@ function LangPicker({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
       <View style={[ps.backdrop, { backgroundColor: '#00000066' }]}>
         <View style={[ps.sheet, { backgroundColor: colors.bg }]}>
           {/* Header */}
@@ -136,6 +142,7 @@ function LangPicker({
           />
         </View>
       </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

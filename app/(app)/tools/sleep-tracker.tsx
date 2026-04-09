@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Modal, Alert, ScrollView,
+  Modal, Alert, ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
+import DateField from '@/components/DateField';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
@@ -545,6 +546,10 @@ export default function SleepTrackerScreen() {
         animationType="slide"
         onRequestClose={() => setShowModal(false)}
       >
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
             {/* Header */}
@@ -560,13 +565,11 @@ export default function SleepTrackerScreen() {
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               {/* Date */}
               <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Date</Text>
-              <TextInput
-                style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+              <DateField
                 value={date}
-                onChangeText={setDate}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.textMuted}
-                maxLength={10}
+                onChange={setDate}
+                accent={ACCENT}
+                placeholder="Pick a date"
               />
 
               {/* Bedtime Picker */}
@@ -587,11 +590,16 @@ export default function SleepTrackerScreen() {
                 <TextInput
                   style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                   value={bedTime}
-                  onChangeText={setBedTime}
+                  onChangeText={v => {
+                    // Auto-insert colon after 2 digits: "23" → "23:"
+                    const digits = v.replace(/[^0-9]/g, '');
+                    if (digits.length <= 2) setBedTime(digits);
+                    else setBedTime(`${digits.slice(0, 2)}:${digits.slice(2, 4)}`);
+                  }}
                   placeholder="HH:MM (e.g. 23:00)"
                   placeholderTextColor={colors.textMuted}
                   maxLength={5}
-                  keyboardType="numbers-and-punctuation"
+                  keyboardType="number-pad"
                 />
               ) : (
                 <View style={styles.pillsRow}>
@@ -633,11 +641,15 @@ export default function SleepTrackerScreen() {
                 <TextInput
                   style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
                   value={wakeTime}
-                  onChangeText={setWakeTime}
+                  onChangeText={v => {
+                    const digits = v.replace(/[^0-9]/g, '');
+                    if (digits.length <= 2) setWakeTime(digits);
+                    else setWakeTime(`${digits.slice(0, 2)}:${digits.slice(2, 4)}`);
+                  }}
                   placeholder="HH:MM (e.g. 07:00)"
                   placeholderTextColor={colors.textMuted}
                   maxLength={5}
-                  keyboardType="numbers-and-punctuation"
+                  keyboardType="number-pad"
                 />
               ) : (
                 <View style={styles.pillsRow}>
@@ -715,6 +727,7 @@ export default function SleepTrackerScreen() {
             </ScrollView>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
     </ScreenShell>
   );

@@ -5,9 +5,10 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
+import DateField from '@/components/DateField';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
-import { schedule, cancel } from '@/lib/notifications';
+import { schedule, cancel, ensureNotificationPermission } from '@/lib/notifications';
 import { haptics } from '@/lib/haptics';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
@@ -115,19 +116,22 @@ export default function HouseBillTrackerScreen() {
     setShowAdd(true);
   };
 
-  // Schedule a 3-day-before reminder for unpaid bills. Cancels for paid bills.
+  // Schedule a 3-day-before reminder for unpaid bills. Cancels for paid
+  // bills. Uses the dedicated `bill` namespace so cancellations are cheap.
   const scheduleBillReminder = useCallback(async (b: Bill) => {
     if (b.paid) {
-      await cancel('custom', `bill-${b.id}`);
+      await cancel('bill', b.id);
+      await cancel('custom', `bill-${b.id}`); // legacy
       return;
     }
     const due = new Date(b.dueDate + 'T09:00:00');
     if (Number.isNaN(due.getTime())) return;
     const fireAt = new Date(due.getTime() - 3 * 24 * 60 * 60 * 1000);
     if (fireAt.getTime() <= Date.now()) return;
+    await ensureNotificationPermission();
     await schedule({
-      id: `bill-${b.id}`,
-      namespace: 'custom',
+      id: b.id,
+      namespace: 'bill',
       title: `${b.title} due in 3 days`,
       body: `₹${b.amount.toLocaleString()} due ${b.dueDate}`,
       date: fireAt,
@@ -196,7 +200,8 @@ export default function HouseBillTrackerScreen() {
         onPress: () => {
           haptics.warning();
           persist(bills.filter(b => b.id !== id));
-          void cancel('custom', `bill-${id}`);
+          void cancel('bill', id);
+          void cancel('custom', `bill-${id}`); // legacy
         },
       },
     ]);
@@ -427,9 +432,11 @@ export default function HouseBillTrackerScreen() {
             />
 
             <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Due Date</Text>
-            <TextInput
-              style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-              value={dueDate} onChangeText={setDueDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textMuted}
+            <DateField
+              value={dueDate}
+              onChange={setDueDate}
+              accent={ACCENT}
+              placeholder="When is it due?"
             />
 
             <TouchableOpacity style={styles.recurToggle} onPress={() => setRecurring(!recurring)}>

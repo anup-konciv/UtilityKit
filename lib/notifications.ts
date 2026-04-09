@@ -34,13 +34,36 @@ function notifs(): any | null {
   }
 }
 
-export type RepeatMode = 'none' | 'daily' | 'weekly';
+export type RepeatMode = 'none' | 'daily' | 'weekly' | 'monthly';
+
+/**
+ * Tool namespace — keeps cancellations cheap and collisions impossible.
+ *
+ * Adding a new tool? Add its namespace here so cancellations stay cheap and
+ * the audit list stays semantic. Falling back to `'custom'` works but loses
+ * the ability to bulk-cancel by tool.
+ */
+export type Namespace =
+  | 'reminder'
+  | 'habit'
+  | 'subscription'
+  | 'doc-expiry'
+  | 'birthday'
+  | 'pomodoro'
+  | 'bill'
+  | 'assignment'
+  | 'vehicle'
+  | 'maintenance'
+  | 'event'
+  | 'travel'
+  | 'water'
+  | 'routine'
+  | 'custom';
 
 export type ScheduleInput = {
   /** Stable id within the namespace (e.g. reminder uuid, habit id). */
   id: string;
-  /** Tool namespace — keeps cancellations cheap and collisions impossible. */
-  namespace: 'reminder' | 'habit' | 'subscription' | 'doc-expiry' | 'birthday' | 'pomodoro' | 'custom';
+  namespace: Namespace;
   title: string;
   body?: string;
   /** Wall-clock fire time. Past dates are silently dropped. */
@@ -115,6 +138,36 @@ export async function requestNotificationPermission(): Promise<boolean> {
   return next.status === 'granted';
 }
 
+/**
+ * Ensure notifications are usable before the caller tries to schedule one.
+ *
+ * - Checks the user toggle (`KEYS.notificationsEnabled`).
+ * - If notifications are off, prompts for permission.
+ * - Returns one of:
+ *     'ready'      → permission granted, scheduling will work
+ *     'denied'     → user denied / can't ask again — caller should explain
+ *     'unsupported'→ web or package missing — caller should silently skip
+ *
+ * Designed so callers can show a helpful one-time alert when the user tries
+ * to set up a reminder but the OS/app isn't going to deliver it.
+ */
+export type PermissionState = 'ready' | 'denied' | 'unsupported';
+export async function ensureNotificationPermission(): Promise<PermissionState> {
+  const N = notifs();
+  if (!N || Platform.OS === 'web') return 'unsupported';
+  const enabled = await loadJSON<boolean>(KEYS.notificationsEnabled, true);
+  if (!enabled) {
+    // Auto-enable when the user explicitly opts in to a reminder. The
+    // global toggle is intended as a kill-switch, not a per-feature gate.
+    await saveJSON(KEYS.notificationsEnabled, true);
+  }
+  const cur = await N.getPermissionsAsync();
+  if (cur.status === 'granted') return 'ready';
+  if (!cur.canAskAgain) return 'denied';
+  const next = await N.requestPermissionsAsync();
+  return next.status === 'granted' ? 'ready' : 'denied';
+}
+
 function buildTrigger(N: any, date: Date, repeat: RepeatMode) {
   if (repeat === 'daily') {
     return { hour: date.getHours(), minute: date.getMinutes(), repeats: true };
@@ -126,6 +179,14 @@ function buildTrigger(N: any, date: Date, repeat: RepeatMode) {
       minute: date.getMinutes(),
       repeats: true,
     };
+  }
+  if (repeat === 'monthly') {
+    // expo-notifications doesn't support a true "monthly" trigger, so we
+    // schedule the next occurrence as a one-shot. Callers that want true
+    // monthly recurrence should re-schedule from inside the notification
+    // handler — for now this gives the user one reminder, the next month
+    // gets re-scheduled when the app is opened.
+    return { date };
   }
   return { date };
 }

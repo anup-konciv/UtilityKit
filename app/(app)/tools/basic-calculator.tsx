@@ -1,9 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 import { withAlpha } from '@/lib/color-utils';
@@ -192,23 +190,18 @@ export default function BasicCalculatorScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top', 'bottom']}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={[styles.headerButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-        >
-          <Ionicons name="chevron-back" size={22} color={colors.text} />
-        </TouchableOpacity>
-        <View style={styles.headerText}>
-          <Text style={[styles.headerEyebrow, { color: colors.textMuted }]}>Everyday Math</Text>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Calculator</Text>
-        </View>
-        <View style={[styles.historyBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.historyBadgeText, { color: ACCENT }]}>{history.entries.length}</Text>
-        </View>
-      </View>
-
+    <ScreenShell
+      title="Calculator"
+      accentColor={ACCENT}
+      scrollable={false}
+      rightAction={
+        history.entries.length > 0 ? (
+          <View style={[styles.historyBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.historyBadgeText, { color: ACCENT }]}>{history.entries.length}</Text>
+          </View>
+        ) : undefined
+      }
+    >
       <LinearGradient
         colors={['#0F172A', '#1D4ED8', '#60A5FA']}
         start={{ x: 0, y: 0 }}
@@ -302,46 +295,12 @@ export default function BasicCalculatorScreen() {
           </View>
         ))}
       </View>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
 const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
   StyleSheet.create({
-    root: {
-      flex: 1,
-      paddingHorizontal: Spacing.md,
-      paddingBottom: Spacing.md,
-      gap: Spacing.md,
-    },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: Spacing.md,
-      paddingTop: Spacing.md,
-    },
-    headerButton: {
-      width: 42,
-      height: 42,
-      borderRadius: Radii.md,
-      borderWidth: 1,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    headerText: {
-      flex: 1,
-      gap: 2,
-    },
-    headerEyebrow: {
-      fontSize: 11,
-      fontFamily: Fonts.semibold,
-      textTransform: 'uppercase',
-      letterSpacing: 1,
-    },
-    headerTitle: {
-      fontSize: 24,
-      fontFamily: Fonts.bold,
-    },
     historyBadge: {
       minWidth: 42,
       height: 42,
@@ -361,6 +320,7 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       minHeight: 250,
       justifyContent: 'flex-end',
       gap: 6,
+      marginBottom: Spacing.md,
     },
     expressionText: {
       fontSize: 22,
@@ -388,6 +348,7 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       borderRadius: Radii.xl,
       padding: Spacing.lg,
       gap: Spacing.sm,
+      marginBottom: Spacing.md,
     },
     historyHeader: {
       flexDirection: 'row',

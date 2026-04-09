@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
+import DateField from '@/components/DateField';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
 import EmptyState from '@/components/EmptyState';
@@ -314,11 +315,14 @@ export default function SavingsGoalScreen() {
               value={target} onChangeText={setTarget}
               placeholder="Target amount" placeholderTextColor={colors.textMuted} keyboardType="numeric"
             />
-            <TextInput
-              style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
-              value={deadline} onChangeText={setDeadline}
-              placeholder="Deadline YYYY-MM-DD (optional)" placeholderTextColor={colors.textMuted} maxLength={10}
-            />
+            <View style={{ marginBottom: Spacing.md }}>
+              <DateField
+                value={deadline}
+                onChange={setDeadline}
+                accent={ACCENT}
+                placeholder="Deadline (optional)"
+              />
+            </View>
             {/* Icon picker */}
             <Text style={[styles.pickerLabel, { color: colors.textMuted }]}>Icon</Text>
             <View style={styles.iconRow}>
