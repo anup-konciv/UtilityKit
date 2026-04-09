@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import ScreenShell from '@/components/ScreenShell';
@@ -719,7 +720,7 @@ export default function BirthdayTrackerScreen() {
         keyboardShouldPersistTaps="handled"
       />
 
-      <Modal visible={form.visible} animationType="slide" transparent onRequestClose={closeModal}>
+      <KeyboardAwareModal visible={form.visible} animationType="slide" transparent onRequestClose={closeModal}>
         <View style={styles.modalRoot}>
           <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={closeModal} />
           <View style={[styles.modalSheet, { backgroundColor: colors.surface }]}>
@@ -916,7 +917,7 @@ export default function BirthdayTrackerScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
     </ScreenShell>
   );
 }

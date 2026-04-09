@@ -26,6 +26,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import EmptyState from '@/components/EmptyState';
@@ -960,7 +961,7 @@ export default function DeliveryTracker(props: Props) {
       )}
 
       {/* Edit Quantity Modal */}
-      <Modal
+      <KeyboardAwareModal
         visible={editTarget !== null && mode !== 'binary'}
         transparent
         animationType="fade"
@@ -1017,10 +1018,10 @@ export default function DeliveryTracker(props: Props) {
             </View>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
 
       {/* Settings Modal */}
-      <Modal
+      <KeyboardAwareModal
         visible={showSettings}
         transparent
         animationType="fade"
@@ -1101,10 +1102,10 @@ export default function DeliveryTracker(props: Props) {
             </View>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
 
       {/* Payment Modal */}
-      <Modal
+      <KeyboardAwareModal
         visible={showPayment}
         transparent
         animationType="fade"
@@ -1163,7 +1164,7 @@ export default function DeliveryTracker(props: Props) {
             </View>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
     </ScreenShell>
   );
 }

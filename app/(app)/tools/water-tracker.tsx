@@ -8,6 +8,7 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
@@ -378,7 +379,7 @@ export default function WaterTrackerScreen() {
       </View>
 
       {/* ── Custom Amount Modal ────────────────────────────── */}
-      <Modal visible={customModalVisible} transparent animationType="fade" onRequestClose={() => setCustomModalVisible(false)}>
+      <KeyboardAwareModal visible={customModalVisible} transparent animationType="fade" onRequestClose={() => setCustomModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, { backgroundColor: colors.card }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Custom Amount</Text>
@@ -400,10 +401,10 @@ export default function WaterTrackerScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
 
       {/* ── Goal Modal ─────────────────────────────────────── */}
-      <Modal visible={goalModalVisible} transparent animationType="fade" onRequestClose={() => setGoalModalVisible(false)}>
+      <KeyboardAwareModal visible={goalModalVisible} transparent animationType="fade" onRequestClose={() => setGoalModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, { backgroundColor: colors.card }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Daily Goal</Text>
@@ -442,7 +443,7 @@ export default function WaterTrackerScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
     </ScreenShell>
   );
 }

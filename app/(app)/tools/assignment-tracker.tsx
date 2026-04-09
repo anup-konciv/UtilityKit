@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert, ScrollView,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
@@ -328,7 +329,7 @@ export default function AssignmentTrackerScreen() {
       })}
 
       {/* Add/Edit Modal */}
-      <Modal visible={showAdd} transparent animationType="fade" onRequestClose={() => setShowAdd(false)}>
+      <KeyboardAwareModal visible={showAdd} transparent animationType="fade" onRequestClose={() => setShowAdd(false)}>
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>{editId ? 'Edit Assignment' : 'New Assignment'}</Text>
@@ -394,7 +395,7 @@ export default function AssignmentTrackerScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
     </ScreenShell>
   );
 }

@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   Modal, Alert, ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import DateField from '@/components/DateField';
@@ -540,16 +541,12 @@ export default function SleepTrackerScreen() {
       )}
 
       {/* ── Add / Edit Modal ─────────────────────────────────────────────── */}
-      <Modal
+      <KeyboardAwareModal
         visible={showModal}
         transparent
         animationType="slide"
         onRequestClose={() => setShowModal(false)}
       >
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
             {/* Header */}
@@ -727,8 +724,7 @@ export default function SleepTrackerScreen() {
             </ScrollView>
           </View>
         </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      </KeyboardAwareModal>
     </ScreenShell>
   );
 }

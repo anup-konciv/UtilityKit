@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import DateField from '@/components/DateField';
@@ -301,7 +302,7 @@ export default function SavingsGoalScreen() {
       )}
 
       {/* Add/Edit Goal Modal */}
-      <Modal visible={showAdd} transparent animationType="fade" onRequestClose={() => setShowAdd(false)}>
+      <KeyboardAwareModal visible={showAdd} transparent animationType="fade" onRequestClose={() => setShowAdd(false)}>
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>{editingGoal ? 'Edit Goal' : 'New Savings Goal'}</Text>
@@ -360,10 +361,10 @@ export default function SavingsGoalScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
 
       {/* Transaction Modal */}
-      <Modal visible={showTransaction !== null} transparent animationType="fade" onRequestClose={() => setShowTransaction(null)}>
+      <KeyboardAwareModal visible={showTransaction !== null} transparent animationType="fade" onRequestClose={() => setShowTransaction(null)}>
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>
@@ -396,10 +397,10 @@ export default function SavingsGoalScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
 
       {/* Transaction History Modal */}
-      <Modal visible={showHistory !== null} transparent animationType="fade" onRequestClose={() => setShowHistory(null)}>
+      <KeyboardAwareModal visible={showHistory !== null} transparent animationType="fade" onRequestClose={() => setShowHistory(null)}>
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.bg, maxHeight: '70%' }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Transaction History</Text>
@@ -430,7 +431,7 @@ export default function SavingsGoalScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
     </ScreenShell>
   );
 }

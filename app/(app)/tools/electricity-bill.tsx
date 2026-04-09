@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
@@ -309,11 +310,7 @@ export default function ElectricityBillScreen() {
       )}
 
       {/* Add/Edit Modal */}
-      <Modal visible={showAdd} transparent animationType="fade" onRequestClose={() => setShowAdd(false)}>
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
+      <KeyboardAwareModal visible={showAdd} transparent animationType="fade" onRequestClose={() => setShowAdd(false)}>
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>{editId ? 'Edit Bill' : 'New Bill'}</Text>
@@ -393,8 +390,7 @@ export default function ElectricityBillScreen() {
             </View>
           </View>
         </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      </KeyboardAwareModal>
     </ScreenShell>
   );
 }

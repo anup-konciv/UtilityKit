@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity,
   ScrollView, StyleSheet, Modal, Alert, Dimensions,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
@@ -243,7 +244,7 @@ function AddExpenseSheet({
   const s = useMemo(() => sheetSt(colors), [colors]);
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+    <KeyboardAwareModal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={s.overlay}>
         <TouchableOpacity style={s.dismiss} activeOpacity={1} onPress={onClose} />
         <ScrollView style={[s.sheet, { backgroundColor: colors.surface }]} keyboardShouldPersistTaps="handled" bounces={false}>
@@ -380,7 +381,7 @@ function AddExpenseSheet({
           />
         )}
       </View>
-    </Modal>
+      </KeyboardAwareModal>
   );
 }
 
@@ -420,7 +421,7 @@ function CategoryEditor({ colors, existingLabels, onSave, onClose }: {
   };
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+    <KeyboardAwareModal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={e.overlay}>
         <View style={[e.box, { backgroundColor: colors.card }]}>
           {/* Live preview pill — gives the user instant feedback on their choices. */}
@@ -507,7 +508,7 @@ function CategoryEditor({ colors, existingLabels, onSave, onClose }: {
           </View>
         </View>
       </View>
-    </Modal>
+      </KeyboardAwareModal>
   );
 }
 
@@ -1256,7 +1257,7 @@ function BudgetModal({ budget, onSave, onClose, colors, currencySymbol }: {
     onSave(n); onClose();
   };
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+    <KeyboardAwareModal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={bm.overlay}>
         <View style={[bm.box, { backgroundColor: colors.card }]}>
           <Text style={[bm.title, { color: colors.text }]}>Monthly Budget</Text>
@@ -1283,7 +1284,7 @@ function BudgetModal({ budget, onSave, onClose, colors, currencySymbol }: {
           </View>
         </View>
       </View>
-    </Modal>
+      </KeyboardAwareModal>
   );
 }
 const bm = StyleSheet.create({
@@ -1315,7 +1316,7 @@ function SettingsSheet({
 }) {
   const ss = useMemo(() => settingsSt(colors), [colors]);
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+    <KeyboardAwareModal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={ss.overlay}>
         <TouchableOpacity style={ss.dismiss} activeOpacity={1} onPress={onClose} />
         <View style={[ss.sheet, { backgroundColor: colors.surface }]}>
@@ -1369,7 +1370,7 @@ function SettingsSheet({
           </TouchableOpacity>
         </View>
       </View>
-    </Modal>
+      </KeyboardAwareModal>
   );
 }
 
@@ -1451,7 +1452,7 @@ function AddTransferSheet({ initial, onSave, onDelete, onClose, colors, currency
     :                       'Where did it go?';
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+    <KeyboardAwareModal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={s.overlay}>
         <TouchableOpacity style={s.dismiss} activeOpacity={1} onPress={onClose} />
         <ScrollView style={[s.sheet, { backgroundColor: colors.surface }]} keyboardShouldPersistTaps="handled" bounces={false}>
@@ -1582,7 +1583,7 @@ function AddTransferSheet({ initial, onSave, onDelete, onClose, colors, currency
           </View>
         </ScrollView>
       </View>
-    </Modal>
+      </KeyboardAwareModal>
   );
 }
 
@@ -2070,7 +2071,7 @@ export default function ExpenseTrackerScreen() {
       )}
 
       {/* Currency Selector Modal */}
-      <Modal visible={showCurrency} transparent animationType="fade" onRequestClose={() => setShowCurrency(false)}>
+      <KeyboardAwareModal visible={showCurrency} transparent animationType="fade" onRequestClose={() => setShowCurrency(false)}>
         <View style={bm.overlay}>
           <View style={[bm.box, { backgroundColor: colors.card }]}>
             <Text style={[bm.title, { color: colors.text }]}>Currency Symbol</Text>
@@ -2101,7 +2102,7 @@ export default function ExpenseTrackerScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
     </ScreenShell>
   );
 }

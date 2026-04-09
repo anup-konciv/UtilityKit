@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert, ScrollView,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
@@ -399,7 +400,7 @@ export default function HouseBillTrackerScreen() {
       )}
 
       {/* Add/Edit Modal */}
-      <Modal visible={showAdd} transparent animationType="fade" onRequestClose={() => setShowAdd(false)}>
+      <KeyboardAwareModal visible={showAdd} transparent animationType="fade" onRequestClose={() => setShowAdd(false)}>
         <View style={styles.modalBg}>
           <ScrollView contentContainerStyle={{ justifyContent: 'center', flexGrow: 1 }}>
           <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
@@ -461,7 +462,7 @@ export default function HouseBillTrackerScreen() {
           </View>
           </ScrollView>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
     </ScreenShell>
   );
 }

@@ -1,5 +1,5 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, FlatList, Animated } from 'react-native';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, FlatList, Animated, Easing } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
@@ -9,6 +9,106 @@ import { haptics } from '@/lib/haptics';
 const ACCENT = '#F59E0B';
 const DICE_TYPES = [4, 6, 8, 10, 12, 20] as const;
 type DiceType = (typeof DICE_TYPES)[number];
+
+// ── D6 dot patterns ──────────────────────────────────────────────────────────
+// Each face value maps to an array of (row, col) positions in a 3x3 grid.
+// 0 = top/left, 1 = center, 2 = bottom/right.
+const D6_PIPS: Record<number, [number, number][]> = {
+  1: [[1, 1]],
+  2: [[0, 2], [2, 0]],
+  3: [[0, 2], [1, 1], [2, 0]],
+  4: [[0, 0], [0, 2], [2, 0], [2, 2]],
+  5: [[0, 0], [0, 2], [1, 1], [2, 0], [2, 2]],
+  6: [[0, 0], [0, 2], [1, 0], [1, 2], [2, 0], [2, 2]],
+};
+
+/** Renders a realistic D6 face with dot pips instead of a plain number. */
+function D6Face({ value, size = 56 }: { value: number; size?: number }) {
+  const pips = D6_PIPS[value] ?? D6_PIPS[1];
+  const pipSize = size * 0.18;
+  const gap = (size - pipSize * 3) / 4; // spacing between pip positions
+
+  return (
+    <View style={{
+      width: size,
+      height: size,
+      borderRadius: size * 0.18,
+      backgroundColor: '#fff',
+      borderWidth: 2,
+      borderColor: '#E5E7EB',
+      padding: gap,
+      // Shadow for depth
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.15,
+      shadowRadius: 4,
+      elevation: 4,
+    }}>
+      {pips.map(([row, col], i) => (
+        <View
+          key={i}
+          style={{
+            position: 'absolute',
+            width: pipSize,
+            height: pipSize,
+            borderRadius: pipSize / 2,
+            backgroundColor: '#1F2937',
+            top: gap + row * (pipSize + gap),
+            left: gap + col * (pipSize + gap),
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+/** Renders a non-D6 die with its shape indicator + number. */
+function DnFace({ value, sides, size = 56 }: { value: number; sides: DiceType; size?: number }) {
+  // Each die type gets a distinctive shape and color
+  const meta: Record<number, { bg: string; shape: string }> = {
+    4:  { bg: '#10B981', shape: '▲' },
+    8:  { bg: '#6366F1', shape: '◆' },
+    10: { bg: '#EC4899', shape: '⬠' },
+    12: { bg: '#3B82F6', shape: '⬡' },
+    20: { bg: '#EF4444', shape: '⬣' },
+  };
+  const m = meta[sides] ?? { bg: ACCENT, shape: '●' };
+
+  return (
+    <View style={{
+      width: size,
+      height: size,
+      borderRadius: sides === 4 ? 4 : size * 0.18,
+      backgroundColor: m.bg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.15,
+      shadowRadius: 4,
+      elevation: 4,
+    }}>
+      <Text style={{
+        position: 'absolute',
+        top: 2,
+        right: 5,
+        fontSize: 9,
+        fontFamily: Fonts.medium,
+        color: 'rgba(255,255,255,0.6)',
+      }}>
+        D{sides}
+      </Text>
+      <Text style={{
+        fontSize: size * 0.42,
+        fontFamily: Fonts.bold,
+        color: '#fff',
+        lineHeight: size * 0.5,
+      }}>
+        {value}
+      </Text>
+    </View>
+  );
+}
 
 type RollRecord = {
   id: string;
@@ -34,34 +134,98 @@ export default function DiceCoinScreen() {
   const [diceResults, setDiceResults] = useState<number[]>([]);
   const [diceTotal, setDiceTotal] = useState(0);
   const [rollHistory, setRollHistory] = useState<RollRecord[]>([]);
+  const [isRolling, setIsRolling] = useState(false);
+
+  // Dice animation refs
+  const diceShake = useRef(new Animated.Value(0)).current;
+  const diceScale = useRef(new Animated.Value(1)).current;
+  const diceBounce = useRef(new Animated.Value(0)).current;
 
   // ── Coin state ──
   const [coinFace, setCoinFace] = useState<'Heads' | 'Tails'>('Heads');
   const [isFlipping, setIsFlipping] = useState(false);
   const [totalFlips, setTotalFlips] = useState(0);
   const [headsCount, setHeadsCount] = useState(0);
-  const coinScale = useRef(new Animated.Value(1)).current;
+
+  // Coin animation refs — scaleX simulates a Y-axis rotation, translateY
+  // simulates the vertical toss arc.
+  const coinFlipAnim = useRef(new Animated.Value(0)).current;
+  const coinToss = useRef(new Animated.Value(0)).current;
+
+  // Derived animated coin transforms
+  const coinScaleX = coinFlipAnim.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [1, 0, 1],
+  });
+  const coinTranslateY = coinToss.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0, -80, 0],
+  });
 
   // ── Dice handlers ──
   const handleRoll = useCallback(() => {
+    if (isRolling) return;
     haptics.medium();
-    const results: number[] = [];
-    for (let i = 0; i < diceCount; i++) {
-      results.push(rollDice(diceType));
-    }
-    const total = results.reduce((a, b) => a + b, 0);
-    setDiceResults(results);
-    setDiceTotal(total);
+    setIsRolling(true);
 
-    const record: RollRecord = {
-      id: Date.now().toString(),
-      diceType,
-      count: diceCount,
-      results,
-      total,
-    };
-    setRollHistory((prev) => [record, ...prev].slice(0, 10));
-  }, [diceType, diceCount]);
+    // 1) Shake + shrink animation (300ms)
+    diceShake.setValue(0);
+    diceScale.setValue(1);
+    diceBounce.setValue(0);
+    Animated.parallel([
+      Animated.sequence([
+        Animated.timing(diceScale, { toValue: 0.8, duration: 100, useNativeDriver: true }),
+        Animated.timing(diceScale, { toValue: 1.05, duration: 100, useNativeDriver: true }),
+        Animated.timing(diceScale, { toValue: 1, duration: 100, useNativeDriver: true }),
+      ]),
+      Animated.timing(diceShake, {
+        toValue: 4,
+        duration: 300,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // 2) Rapid number cycling (shows random faces during shake)
+    const cycleCount = 6;
+    let cycle = 0;
+    const cycleInterval = setInterval(() => {
+      const tempResults: number[] = [];
+      for (let i = 0; i < diceCount; i++) tempResults.push(rollDice(diceType));
+      setDiceResults(tempResults);
+      cycle++;
+      if (cycle >= cycleCount) {
+        clearInterval(cycleInterval);
+        // 3) Settle on final result + bounce landing
+        const finalResults: number[] = [];
+        for (let i = 0; i < diceCount; i++) finalResults.push(rollDice(diceType));
+        const total = finalResults.reduce((a, b) => a + b, 0);
+        setDiceResults(finalResults);
+        setDiceTotal(total);
+        haptics.success();
+
+        // Landing bounce
+        Animated.sequence([
+          Animated.timing(diceBounce, { toValue: -12, duration: 80, useNativeDriver: true }),
+          Animated.spring(diceBounce, { toValue: 0, friction: 4, useNativeDriver: true }),
+        ]).start(() => setIsRolling(false));
+
+        setRollHistory((prev) => [{
+          id: Date.now().toString(),
+          diceType,
+          count: diceCount,
+          results: finalResults,
+          total,
+        }, ...prev].slice(0, 10));
+      }
+    }, 50);
+  }, [diceType, diceCount, isRolling, diceShake, diceScale, diceBounce]);
+
+  // Interpolate shake to a horizontal wiggle
+  const diceTranslateX = diceShake.interpolate({
+    inputRange: [0, 1, 2, 3, 4],
+    outputRange: [0, -6, 6, -4, 0],
+  });
 
   // ── Coin handlers ──
   const handleFlip = useCallback(() => {
@@ -69,32 +233,52 @@ export default function DiceCoinScreen() {
     haptics.medium();
     setIsFlipping(true);
 
-    const totalToggles = 8;
-    let current = coinFace;
-    let count = 0;
+    // Determine result up front
+    const finalFace: 'Heads' | 'Tails' = Math.random() < 0.5 ? 'Heads' : 'Tails';
 
-    const interval = setInterval(() => {
-      current = current === 'Heads' ? 'Tails' : 'Heads';
-      setCoinFace(current);
+    // Reset animations
+    coinFlipAnim.setValue(0);
+    coinToss.setValue(0);
 
-      // Pulse animation
-      Animated.sequence([
-        Animated.timing(coinScale, { toValue: 0.85, duration: 40, useNativeDriver: true }),
-        Animated.timing(coinScale, { toValue: 1, duration: 40, useNativeDriver: true }),
-      ]).start();
+    // Run 3 full "rotations" (each is 0→1) sequentially while the coin
+    // arcs up and down. The face text swaps at the midpoint of each rotation
+    // (when scaleX hits 0 and the coin is edge-on, so the swap is invisible).
+    const flipCount = 5;
+    let flipped = 0;
 
-      count++;
-      if (count >= totalToggles) {
-        clearInterval(interval);
-        // Final result
-        const finalFace: 'Heads' | 'Tails' = Math.random() < 0.5 ? 'Heads' : 'Tails';
-        setCoinFace(finalFace);
-        setTotalFlips((p) => p + 1);
-        if (finalFace === 'Heads') setHeadsCount((p) => p + 1);
-        setIsFlipping(false);
-      }
-    }, 100);
-  }, [isFlipping, coinFace, coinScale]);
+    const runOneFlip = () => {
+      coinFlipAnim.setValue(0);
+      Animated.timing(coinFlipAnim, {
+        toValue: 1,
+        duration: 160,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }).start(() => {
+        flipped++;
+        // Swap face at each midpoint (invisible since scaleX = 0 at .5)
+        setCoinFace(f => f === 'Heads' ? 'Tails' : 'Heads');
+        if (flipped < flipCount) {
+          runOneFlip();
+        } else {
+          // Land on the predetermined result
+          setCoinFace(finalFace);
+          setTotalFlips(p => p + 1);
+          if (finalFace === 'Heads') setHeadsCount(p => p + 1);
+          setIsFlipping(false);
+        }
+      });
+    };
+
+    // Toss arc (up then down) runs in parallel with the flips
+    Animated.timing(coinToss, {
+      toValue: 1,
+      duration: 160 * flipCount,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+
+    runOneFlip();
+  }, [isFlipping, coinFlipAnim, coinToss]);
 
   const resetCoinStats = useCallback(() => {
     setTotalFlips(0);
@@ -182,27 +366,48 @@ export default function DiceCoinScreen() {
           </View>
 
           {/* Roll button */}
-          <TouchableOpacity style={styles.rollBtn} onPress={handleRoll} activeOpacity={0.8}>
-            <Ionicons name="dice" size={22} color="#fff" />
-            <Text style={styles.rollBtnText}>Roll {diceCount}D{diceType}</Text>
+          <TouchableOpacity
+            style={[styles.rollBtn, isRolling && { opacity: 0.7 }]}
+            onPress={handleRoll}
+            activeOpacity={0.8}
+            disabled={isRolling}
+          >
+            <Text style={{ fontSize: 22 }}>🎲</Text>
+            <Text style={styles.rollBtnText}>
+              {isRolling ? 'Rolling...' : `Roll ${diceCount}D${diceType}`}
+            </Text>
           </TouchableOpacity>
 
-          {/* Results */}
+          {/* Results — animated with shake + bounce */}
           {diceResults.length > 0 && (
-            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Animated.View
+              style={[
+                styles.card,
+                { backgroundColor: colors.card, borderColor: colors.border },
+                {
+                  transform: [
+                    { translateX: diceTranslateX },
+                    { translateY: diceBounce },
+                    { scale: diceScale },
+                  ],
+                },
+              ]}
+            >
               <View style={styles.diceResultRow}>
-                {diceResults.map((val, i) => (
-                  <View key={i} style={[styles.dieFace, { backgroundColor: ACCENT }]}>
-                    <Text style={styles.dieFaceText}>{val}</Text>
-                  </View>
-                ))}
+                {diceResults.map((val, i) =>
+                  diceType === 6 ? (
+                    <D6Face key={i} value={val} size={diceCount <= 3 ? 64 : 52} />
+                  ) : (
+                    <DnFace key={i} value={val} sides={diceType} size={diceCount <= 3 ? 64 : 52} />
+                  )
+                )}
               </View>
-              {diceResults.length > 1 && (
+              {diceResults.length > 1 && !isRolling && (
                 <Text style={[styles.totalText, { color: colors.text }]}>
                   Total: {diceTotal}
                 </Text>
               )}
-            </View>
+            </Animated.View>
           )}
 
           {/* History */}
@@ -232,35 +437,64 @@ export default function DiceCoinScreen() {
         </View>
       ) : (
         <View style={styles.content}>
-          {/* Coin display */}
+          {/* Coin display — scaleX simulates a Y-axis rotation while
+              translateY arcs the coin up and down like a real toss. */}
           <View style={styles.coinArea}>
             <Animated.View
               style={[
                 styles.coin,
                 {
-                  backgroundColor: coinFace === 'Heads' ? ACCENT : colors.card,
-                  borderColor: ACCENT,
-                  transform: [{ scale: coinScale }],
+                  backgroundColor: coinFace === 'Heads' ? '#F59E0B' : '#94A3B8',
+                  borderColor: coinFace === 'Heads' ? '#D97706' : '#64748B',
+                  transform: [
+                    { translateY: coinTranslateY },
+                    { scaleX: coinScaleX },
+                  ],
+                  // Outer glow
+                  shadowColor: coinFace === 'Heads' ? '#F59E0B' : '#000',
+                  shadowOffset: { width: 0, height: 6 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 12,
+                  elevation: 8,
                 },
               ]}
             >
-              <Text
-                style={[
-                  styles.coinText,
-                  { color: coinFace === 'Heads' ? '#fff' : colors.text },
-                ]}
-              >
-                {coinFace === 'Heads' ? 'H' : 'T'}
-              </Text>
-              <Text
-                style={[
-                  styles.coinLabel,
-                  { color: coinFace === 'Heads' ? 'rgba(255,255,255,0.8)' : colors.textMuted },
-                ]}
-              >
-                {coinFace}
-              </Text>
+              {/* Inner ring for depth feel */}
+              <View style={[
+                styles.coinInner,
+                { borderColor: coinFace === 'Heads' ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.2)' },
+              ]}>
+                <Text style={styles.coinEmoji}>
+                  {coinFace === 'Heads' ? '👑' : '🦅'}
+                </Text>
+                <Text
+                  style={[
+                    styles.coinText,
+                    { color: '#fff' },
+                  ]}
+                >
+                  {coinFace}
+                </Text>
+              </View>
             </Animated.View>
+            {/* Landing shadow that grows when the coin is in the air */}
+            <Animated.View
+              style={[
+                styles.coinShadow,
+                {
+                  opacity: coinToss.interpolate({
+                    inputRange: [0, 0.5, 1],
+                    outputRange: [0.15, 0.05, 0.15],
+                  }),
+                  transform: [{
+                    scaleX: coinToss.interpolate({
+                      inputRange: [0, 0.5, 1],
+                      outputRange: [1, 1.6, 1],
+                    }),
+                  }],
+                },
+              ]}
+            />
           </View>
 
           {/* Flip button */}
@@ -441,21 +675,37 @@ function createStyles(colors: Record<string, string>) {
       paddingVertical: Spacing.xl,
     },
     coin: {
-      width: 160,
-      height: 160,
-      borderRadius: 80,
-      borderWidth: 3,
+      width: 150,
+      height: 150,
+      borderRadius: 75,
+      borderWidth: 4,
       alignItems: 'center',
       justifyContent: 'center',
     },
+    coinInner: {
+      width: 130,
+      height: 130,
+      borderRadius: 65,
+      borderWidth: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    coinEmoji: {
+      fontSize: 40,
+      marginBottom: 2,
+    },
     coinText: {
       fontFamily: Fonts.bold,
-      fontSize: 56,
+      fontSize: 16,
+      letterSpacing: 2,
+      textTransform: 'uppercase',
     },
-    coinLabel: {
-      fontFamily: Fonts.semibold,
-      fontSize: 14,
-      marginTop: Spacing.xs,
+    coinShadow: {
+      width: 120,
+      height: 16,
+      borderRadius: 60,
+      backgroundColor: '#000',
+      marginTop: 12,
     },
     statsGrid: {
       flexDirection: 'row',

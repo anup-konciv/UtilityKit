@@ -11,7 +11,11 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  Animated,
+  Easing,
+  Dimensions,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +23,7 @@ import { router } from 'expo-router';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
 import { cache } from '@/lib/cache';
 import { getCurrentPosition, reverseGeocode } from '@/lib/location';
+import { useAppTheme } from '@/components/ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 
 // 30 minutes — Open-Meteo updates ~hourly so this is the right balance
@@ -83,14 +88,28 @@ function weatherInfo(code: number, isNight = false): { label: string; icon: stri
   return            { label: 'Cloudy',                                        icon: 'cloudy-outline'                                             };
 }
 
-function getGradient(code: number, hour: number): [string, string, string] {
+function getGradient(code: number, hour: number, light: boolean): [string, string, string] {
   const night = hour < 6 || hour >= 21;
+  if (light) {
+    // ── Light mode: soft pastels ──
+    if (code >= 95) return ['#DDD6FE', '#C4B5FD', '#A78BFA'];  // purple storm
+    if (code >= 61) return ['#BFDBFE', '#93C5FD', '#60A5FA'];  // blue rain
+    if (code >= 51) return ['#CFFAFE', '#A5F3FC', '#67E8F9'];  // cyan drizzle
+    if (code >= 45) return ['#E2E8F0', '#CBD5E1', '#94A3B8'];  // gray fog
+    if (code >= 1)  return night ? ['#E0E7FF', '#C7D2FE', '#A5B4FC'] : ['#DBEAFE', '#BFDBFE', '#93C5FD'];
+    if (night)      return ['#E0E7FF', '#C7D2FE', '#A5B4FC'];  // soft indigo night
+    if (hour < 9)   return ['#FEF3C7', '#FDE68A', '#FCD34D'];  // warm sunrise
+    if (hour >= 18) return ['#FFE4E6', '#FECDD3', '#FDA4AF'];  // warm sunset
+    return ['#E0F2FE', '#BAE6FD', '#7DD3FC'];                   // clear sky blue
+  }
+  // ── Dark mode (original) ──
+  const night2 = night;
   if (code >= 95) return ['#1a1a2e', '#2d1b4e', '#4a1942'];
   if (code >= 61) return ['#1e3a5f', '#1565c0', '#2980b9'];
   if (code >= 51) return ['#2c3e50', '#3d5a74', '#4ca1af'];
   if (code >= 45) return ['#29323c', '#485563', '#636e72'];
-  if (code >= 1)  return night ? ['#0d1b2a', '#1b2838', '#243b55'] : ['#1565c0', '#1976d2', '#42a5f5'];
-  if (night)      return ['#0f0c29', '#1a1248', '#302b63'];
+  if (code >= 1)  return night2 ? ['#0d1b2a', '#1b2838', '#243b55'] : ['#1565c0', '#1976d2', '#42a5f5'];
+  if (night2)     return ['#0f0c29', '#1a1248', '#302b63'];
   if (hour < 9)   return ['#c94b4b', '#e67e22', '#f7971e'];
   if (hour >= 18) return ['#c0392b', '#e74c3c', '#f39c12'];
   return ['#1565c0', '#1976d2', '#42a5f5'];
@@ -182,7 +201,7 @@ function SearchModal({ onSelect, onClose }: { onSelect: (l: SavedLocation) => vo
   }, [onSelect]);
 
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
+    <KeyboardAwareModal visible animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={sm.root} edges={['top', 'bottom']}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -266,7 +285,7 @@ function SearchModal({ onSelect, onClose }: { onSelect: (l: SavedLocation) => vo
         />
       </KeyboardAvoidingView>
       </SafeAreaView>
-    </Modal>
+    </KeyboardAwareModal>
   );
 }
 
@@ -288,23 +307,248 @@ const sm = StyleSheet.create({
 });
 
 // ── Stat tile ─────────────────────────────────────────────────────────────────
-function Stat({ icon, label, value }: { icon: string; label: string; value: string }) {
+function Stat({ icon, label, value, fg = '#fff', fgSub = 'rgba(255,255,255,0.7)' }: {
+  icon: string; label: string; value: string; fg?: string; fgSub?: string;
+}) {
   return (
     <View style={ws.stat}>
-      <Ionicons name={icon as any} size={22} color="rgba(255,255,255,0.85)" />
-      <Text style={ws.statVal}>{value}</Text>
-      <Text style={ws.statLbl}>{label}</Text>
+      <Ionicons name={icon as any} size={22} color={fgSub} />
+      <Text style={[ws.statVal, { color: fg }]}>{value}</Text>
+      <Text style={[ws.statLbl, { color: fgSub }]}>{label}</Text>
     </View>
   );
 }
 
+// ── Weather Animations ───────────────────────────────────────────────────────
+const SCREEN_W = Dimensions.get('window').width;
+
+/** Falling particles (rain or snow) */
+function FallingParticles({ count, color, speed, sway, size }: {
+  count: number; color: string; speed: number; sway: number; size: number;
+}) {
+  const anims = useRef(
+    Array.from({ length: count }, () => ({
+      y: new Animated.Value(-20),
+      x: new Animated.Value(Math.random() * SCREEN_W),
+      delay: Math.random() * speed,
+      startX: Math.random() * SCREEN_W,
+    }))
+  ).current;
+
+  useEffect(() => {
+    anims.forEach(p => {
+      const loop = () => {
+        p.y.setValue(-20);
+        p.x.setValue(p.startX);
+        Animated.parallel([
+          Animated.timing(p.y, {
+            toValue: 320,
+            duration: speed + Math.random() * speed * 0.5,
+            delay: p.delay,
+            easing: Easing.linear,
+            useNativeDriver: true,
+          }),
+          ...(sway > 0 ? [Animated.timing(p.x, {
+            toValue: p.startX + (Math.random() - 0.5) * sway,
+            duration: speed,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          })] : []),
+        ]).start(loop);
+      };
+      loop();
+    });
+  }, []);
+
+  return (
+    <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+      {anims.map((p, i) => (
+        <Animated.View
+          key={i}
+          style={{
+            position: 'absolute',
+            width: size,
+            height: sway > 0 ? size : size * 4,
+            borderRadius: size / 2,
+            backgroundColor: color,
+            transform: [{ translateX: p.x }, { translateY: p.y }],
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+/** Sun rays — rotating golden lines */
+function SunRays() {
+  const spin = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.timing(spin, { toValue: 1, duration: 20000, easing: Easing.linear, useNativeDriver: true })
+    ).start();
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1.1, duration: 2000, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.95, duration: 2000, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+
+  const rotation = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+
+  return (
+    <View style={[StyleSheet.absoluteFillObject, { alignItems: 'center', justifyContent: 'center' }]} pointerEvents="none">
+      <Animated.View style={{ transform: [{ rotate: rotation }, { scale: pulse }] }}>
+        {Array.from({ length: 8 }).map((_, i) => (
+          <View
+            key={i}
+            style={{
+              position: 'absolute',
+              width: 3,
+              height: 50,
+              backgroundColor: 'rgba(255,215,0,0.18)',
+              borderRadius: 2,
+              top: -70,
+              left: -1.5,
+              transform: [{ rotate: `${i * 45}deg` }, { translateY: -30 }],
+            }}
+          />
+        ))}
+      </Animated.View>
+    </View>
+  );
+}
+
+/** Drifting clouds */
+function DriftingClouds({ count = 3, opacity = 0.15 }: { count?: number; opacity?: number }) {
+  const anims = useRef(
+    Array.from({ length: count }, (_, i) => ({
+      x: new Animated.Value(-120),
+      top: 30 + i * 60 + Math.random() * 30,
+      width: 80 + Math.random() * 60,
+      speed: 12000 + Math.random() * 8000,
+    }))
+  ).current;
+
+  useEffect(() => {
+    anims.forEach(c => {
+      const loop = () => {
+        c.x.setValue(-c.width - 20);
+        Animated.timing(c.x, {
+          toValue: SCREEN_W + 20,
+          duration: c.speed,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }).start(loop);
+      };
+      loop();
+    });
+  }, []);
+
+  return (
+    <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+      {anims.map((c, i) => (
+        <Animated.View
+          key={i}
+          style={{
+            position: 'absolute',
+            top: c.top,
+            width: c.width,
+            height: c.width * 0.4,
+            borderRadius: c.width * 0.2,
+            backgroundColor: `rgba(255,255,255,${opacity})`,
+            transform: [{ translateX: c.x }],
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+/** Lightning flash */
+function LightningFlash() {
+  const flash = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const doFlash = () => {
+      Animated.sequence([
+        Animated.timing(flash, { toValue: 0.7, duration: 80, useNativeDriver: true }),
+        Animated.timing(flash, { toValue: 0, duration: 60, useNativeDriver: true }),
+        Animated.delay(150),
+        Animated.timing(flash, { toValue: 0.4, duration: 60, useNativeDriver: true }),
+        Animated.timing(flash, { toValue: 0, duration: 100, useNativeDriver: true }),
+        Animated.delay(3000 + Math.random() * 5000),
+      ]).start(doFlash);
+    };
+    doFlash();
+  }, []);
+
+  return (
+    <Animated.View
+      style={[StyleSheet.absoluteFillObject, { backgroundColor: '#fff', opacity: flash }]}
+      pointerEvents="none"
+    />
+  );
+}
+
+/** Picks the right animation for the weather code */
+function WeatherAnimation({ code }: { code: number }) {
+  if (code >= 95) {
+    // Thunderstorm
+    return (
+      <>
+        <FallingParticles count={15} color="rgba(100,150,255,0.5)" speed={800} sway={0} size={2} />
+        <LightningFlash />
+      </>
+    );
+  }
+  if (code >= 71 && code <= 86) {
+    // Snow
+    return <FallingParticles count={20} color="rgba(255,255,255,0.6)" speed={3000} sway={60} size={5} />;
+  }
+  if (code >= 51 && code <= 67) {
+    // Rain / Drizzle
+    return <FallingParticles count={18} color="rgba(130,180,255,0.45)" speed={1000} sway={0} size={2} />;
+  }
+  if (code >= 80 && code <= 82) {
+    // Rain showers
+    return <FallingParticles count={12} color="rgba(130,180,255,0.4)" speed={900} sway={0} size={2} />;
+  }
+  if (code >= 45 && code <= 48) {
+    // Fog
+    return <DriftingClouds count={5} opacity={0.2} />;
+  }
+  if (code >= 1 && code <= 3) {
+    // Partly cloudy / Overcast
+    return <DriftingClouds count={3} opacity={0.12} />;
+  }
+  if (code === 0) {
+    // Clear sky — sun rays
+    return <SunRays />;
+  }
+  return null;
+}
+
 // ── Main Screen ───────────────────────────────────────────────────────────────
 export default function WeatherScreen() {
+  const { colors: themeColors } = useAppTheme();
+  const isLight = themeColors.bg !== '#0B1120';
+
   const [location,   setLocation]   = useState<SavedLocation | null>(null);
   const [weather,    setWeather]    = useState<WeatherData | null>(null);
   const [loading,    setLoading]    = useState(false);
   const [error,      setError]      = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
+
+  // Theme-adaptive colors for text and UI elements on the gradient background.
+  const fg = isLight ? '#1E293B' : '#FFFFFF';
+  const fgSub = isLight ? '#475569' : 'rgba(255,255,255,0.7)';
+  const fgMuted = isLight ? '#64748B' : 'rgba(255,255,255,0.5)';
+  const btnBg = isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.18)';
+  const cardBg = isLight ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.1)';
+  const cardBorder = isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.12)';
 
   useEffect(() => {
     loadJSON<SavedLocation | null>(KEYS.weatherLocation, null).then((saved) => {
@@ -355,7 +599,7 @@ export default function WeatherScreen() {
   const hour    = new Date().getHours();
   const isNight = hour < 6 || hour >= 21;
   const wCode   = weather?.current.weather_code ?? 0;
-  const grad    = getGradient(wCode, hour);
+  const grad    = getGradient(wCode, hour, isLight);
   const wInfo   = weatherInfo(wCode, isNight);
 
   // Slice hourly to next 24h from now
@@ -379,95 +623,99 @@ export default function WeatherScreen() {
 
           {/* ── Top bar ── */}
           <View style={ws.topBar}>
-            <TouchableOpacity onPress={() => router.back()} style={ws.circleBtn}>
-              <Ionicons name="chevron-back" size={22} color="#fff" />
+            <TouchableOpacity onPress={() => {
+              if (router.canGoBack()) router.back();
+              else router.replace('/');
+            }} style={[ws.circleBtn, { backgroundColor: btnBg }]}>
+              <Ionicons name="chevron-back" size={22} color={fg} />
             </TouchableOpacity>
 
             <View style={ws.topCenter}>
               {location ? (
                 <>
-                  <Text style={ws.locName} numberOfLines={1}>{location.name}</Text>
-                  <Text style={ws.locSub} numberOfLines={1}>
+                  <Text style={[ws.locName, { color: fg }]} numberOfLines={1}>{location.name}</Text>
+                  <Text style={[ws.locSub, { color: fgSub }]} numberOfLines={1}>
                     {[location.admin1, location.country].filter(Boolean).join(', ')}
                   </Text>
                 </>
               ) : (
-                <Text style={ws.locName}>Weather</Text>
+                <Text style={[ws.locName, { color: fg }]}>Weather</Text>
               )}
             </View>
 
-            <TouchableOpacity onPress={() => setShowSearch(true)} style={ws.circleBtn}>
-              <Ionicons name="search-outline" size={20} color="#fff" />
+            <TouchableOpacity onPress={() => setShowSearch(true)} style={[ws.circleBtn, { backgroundColor: btnBg }]}>
+              <Ionicons name="search-outline" size={20} color={fg} />
             </TouchableOpacity>
           </View>
 
           {/* ── States ── */}
           {!location ? (
             <View style={ws.centered}>
-              <Ionicons name="partly-sunny-outline" size={80} color="rgba(255,255,255,0.5)" />
-              <Text style={ws.bigLabel}>No Location Set</Text>
-              <Text style={ws.subLabel}>Search for a city to get started</Text>
-              <TouchableOpacity style={ws.ghostBtn} onPress={() => setShowSearch(true)}>
-                <Ionicons name="search-outline" size={18} color="#fff" />
-                <Text style={ws.ghostBtnText}>Search City</Text>
+              <Ionicons name="partly-sunny-outline" size={80} color={fgMuted} />
+              <Text style={[ws.bigLabel, { color: fg }]}>No Location Set</Text>
+              <Text style={[ws.subLabel, { color: fgSub }]}>Search for a city to get started</Text>
+              <TouchableOpacity style={[ws.ghostBtn, { backgroundColor: btnBg }]} onPress={() => setShowSearch(true)}>
+                <Ionicons name="search-outline" size={18} color={fg} />
+                <Text style={[ws.ghostBtnText, { color: fg }]}>Search City</Text>
               </TouchableOpacity>
             </View>
 
           ) : loading ? (
             <View style={ws.centered}>
-              <ActivityIndicator size="large" color="rgba(255,255,255,0.9)" />
-              <Text style={[ws.subLabel, { marginTop: 16 }]}>Loading weather…</Text>
+              <ActivityIndicator size="large" color={fgSub} />
+              <Text style={[ws.subLabel, { color: fgSub, marginTop: 16 }]}>Loading weather…</Text>
             </View>
 
           ) : error ? (
             <View style={ws.centered}>
-              <Ionicons name="cloud-offline-outline" size={80} color="rgba(255,255,255,0.45)" />
-              <Text style={ws.bigLabel}>Couldn't Load Weather</Text>
-              <Text style={ws.subLabel}>{error}</Text>
-              <TouchableOpacity style={ws.ghostBtn} onPress={() => load(location)}>
-                <Ionicons name="refresh-outline" size={18} color="#fff" />
-                <Text style={ws.ghostBtnText}>Retry</Text>
+              <Ionicons name="cloud-offline-outline" size={80} color={fgMuted} />
+              <Text style={[ws.bigLabel, { color: fg }]}>Couldn't Load Weather</Text>
+              <Text style={[ws.subLabel, { color: fgSub }]}>{error}</Text>
+              <TouchableOpacity style={[ws.ghostBtn, { backgroundColor: btnBg }]} onPress={() => load(location)}>
+                <Ionicons name="refresh-outline" size={18} color={fg} />
+                <Text style={[ws.ghostBtnText, { color: fg }]}>Retry</Text>
               </TouchableOpacity>
             </View>
 
           ) : weather ? (
             <ScrollView contentContainerStyle={ws.scroll} showsVerticalScrollIndicator={false}>
 
-              {/* ── Hero ── */}
+              {/* ── Hero with weather animation ── */}
               <View style={ws.hero}>
-                <Ionicons name={wInfo.icon as any} size={84} color="rgba(255,255,255,0.95)" />
-                <Text style={ws.tempHuge}>{Math.round(weather.current.temperature_2m)}°</Text>
-                <Text style={ws.condition}>{wInfo.label}</Text>
-                <Text style={ws.feelsLike}>
+                <WeatherAnimation code={wCode} />
+                <Ionicons name={wInfo.icon as any} size={84} color={isLight ? fgSub : 'rgba(255,255,255,0.95)'} style={{ zIndex: 1 }} />
+                <Text style={[ws.tempHuge, { color: fg, zIndex: 1 }]}>{Math.round(weather.current.temperature_2m)}°</Text>
+                <Text style={[ws.condition, { color: fg, zIndex: 1 }]}>{wInfo.label}</Text>
+                <Text style={[ws.feelsLike, { color: fgSub, zIndex: 1 }]}>
                   Feels like {Math.round(weather.current.apparent_temperature)}°
                 </Text>
               </View>
 
               {/* ── Stats row ── */}
-              <View style={ws.statsRow}>
-                <Stat icon="water-outline"       label="Humidity" value={`${weather.current.relative_humidity_2m}%`} />
-                <View style={ws.statDivider} />
-                <Stat icon="speedometer-outline" label="Wind"     value={`${Math.round(weather.current.wind_speed_10m)} km/h`} />
-                <View style={ws.statDivider} />
-                <Stat icon="sunny-outline"        label="UV"       value={String(Math.round(weather.current.uv_index ?? 0))} />
-                <View style={ws.statDivider} />
-                <Stat icon="umbrella-outline"    label="Rain"     value={`${weather.current.precipitation} mm`} />
+              <View style={[ws.statsRow, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                <Stat icon="water-outline"       label="Humidity" value={`${weather.current.relative_humidity_2m}%`} fg={fg} fgSub={fgSub} />
+                <View style={[ws.statDivider, { backgroundColor: cardBorder }]} />
+                <Stat icon="speedometer-outline" label="Wind"     value={`${Math.round(weather.current.wind_speed_10m)} km/h`} fg={fg} fgSub={fgSub} />
+                <View style={[ws.statDivider, { backgroundColor: cardBorder }]} />
+                <Stat icon="sunny-outline"        label="UV"       value={String(Math.round(weather.current.uv_index ?? 0))} fg={fg} fgSub={fgSub} />
+                <View style={[ws.statDivider, { backgroundColor: cardBorder }]} />
+                <Stat icon="umbrella-outline"    label="Rain"     value={`${weather.current.precipitation} mm`} fg={fg} fgSub={fgSub} />
               </View>
 
               {/* ── Hourly ── */}
               {hourlySlice && (
                 <View style={ws.section}>
-                  <Text style={ws.sectionLabel}>Hourly Forecast</Text>
+                  <Text style={[ws.sectionLabel, { color: fg }]}>Hourly Forecast</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
                     {hourlySlice.time.map((t, i) => {
                       const hi = weatherInfo(hourlySlice.weather_code[i], false);
                       const rain = hourlySlice.precipitation_probability[i];
                       return (
-                        <View key={t} style={ws.hourCard}>
-                          <Text style={ws.hourTime}>{fmtHour(t)}</Text>
-                          <Ionicons name={hi.icon as any} size={20} color="rgba(255,255,255,0.9)" />
-                          <Text style={ws.hourTemp}>{Math.round(hourlySlice.temperature_2m[i])}°</Text>
-                          {rain > 0 && <Text style={ws.hourRain}>{rain}%</Text>}
+                        <View key={t} style={[ws.hourCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                          <Text style={[ws.hourTime, { color: fgSub }]}>{fmtHour(t)}</Text>
+                          <Ionicons name={hi.icon as any} size={20} color={fgSub} />
+                          <Text style={[ws.hourTemp, { color: fg }]}>{Math.round(hourlySlice.temperature_2m[i])}°</Text>
+                          {rain > 0 && <Text style={[ws.hourRain, { color: isLight ? '#3B82F6' : '#60A5FA' }]}>{rain}%</Text>}
                         </View>
                       );
                     })}
@@ -477,26 +725,26 @@ export default function WeatherScreen() {
 
               {/* ── 7-day ── */}
               <View style={ws.section}>
-                <Text style={ws.sectionLabel}>7-Day Forecast</Text>
-                <View style={ws.dailyCard}>
+                <Text style={[ws.sectionLabel, { color: fg }]}>7-Day Forecast</Text>
+                <View style={[ws.dailyCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                   {weather.daily.time.map((date, i) => {
                     const di   = weatherInfo(weather.daily.weather_code[i], false);
                     const rain = weather.daily.precipitation_sum[i];
                     return (
                       <View
                         key={date}
-                        style={[ws.dailyRow, i < weather.daily.time.length - 1 && ws.dailyBorder]}
+                        style={[ws.dailyRow, i < weather.daily.time.length - 1 && { borderBottomColor: cardBorder, borderBottomWidth: StyleSheet.hairlineWidth }]}
                       >
-                        <Text style={ws.dayName}>{dayLabel(date, i)}</Text>
-                        <Ionicons name={di.icon as any} size={20} color="rgba(255,255,255,0.9)" />
+                        <Text style={[ws.dayName, { color: fg }]}>{dayLabel(date, i)}</Text>
+                        <Ionicons name={di.icon as any} size={20} color={fgSub} />
                         {rain > 0 ? (
-                          <Text style={ws.dailyRain}>{rain.toFixed(1)} mm</Text>
+                          <Text style={[ws.dailyRain, { color: isLight ? '#3B82F6' : '#60A5FA' }]}>{rain.toFixed(1)} mm</Text>
                         ) : (
                           <View style={{ width: 44 }} />
                         )}
                         <View style={ws.dailyTemps}>
-                          <Text style={ws.dailyHi}>{Math.round(weather.daily.temperature_2m_max[i])}°</Text>
-                          <Text style={ws.dailyLo}>{Math.round(weather.daily.temperature_2m_min[i])}°</Text>
+                          <Text style={[ws.dailyHi, { color: fg }]}>{Math.round(weather.daily.temperature_2m_max[i])}°</Text>
+                          <Text style={[ws.dailyLo, { color: fgMuted }]}>{Math.round(weather.daily.temperature_2m_min[i])}°</Text>
                         </View>
                       </View>
                     );
@@ -504,7 +752,7 @@ export default function WeatherScreen() {
                 </View>
               </View>
 
-              <Text style={ws.credit}>Powered by Open-Meteo · No API key required</Text>
+              <Text style={[ws.credit, { color: fgMuted }]}>Powered by Open-Meteo · No API key required</Text>
             </ScrollView>
           ) : null}
 
@@ -520,54 +768,53 @@ export default function WeatherScreen() {
 const ws = StyleSheet.create({
   // Top bar
   topBar:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
-  circleBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.18)' },
+  circleBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   topCenter: { flex: 1, alignItems: 'center' },
-  locName:   { fontFamily: Fonts.bold, fontSize: 17, color: '#fff' },
-  locSub:    { fontFamily: Fonts.regular, fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 1 },
+  locName:   { fontFamily: Fonts.bold, fontSize: 17 },
+  locSub:    { fontFamily: Fonts.regular, fontSize: 12, marginTop: 1 },
 
   // Empty/error/loading
   centered:     { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.xl, gap: 10 },
-  bigLabel:     { fontFamily: Fonts.bold, fontSize: 22, color: '#fff', textAlign: 'center' },
-  subLabel:     { fontFamily: Fonts.regular, fontSize: 14, color: 'rgba(255,255,255,0.7)', textAlign: 'center' },
-  ghostBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: Radii.pill, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md, marginTop: Spacing.md },
-  ghostBtnText: { fontFamily: Fonts.semibold, fontSize: 15, color: '#fff' },
+  bigLabel:     { fontFamily: Fonts.bold, fontSize: 22, textAlign: 'center' },
+  subLabel:     { fontFamily: Fonts.regular, fontSize: 14, textAlign: 'center' },
+  ghostBtn:     { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: Radii.pill, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md, marginTop: Spacing.md },
+  ghostBtnText: { fontFamily: Fonts.semibold, fontSize: 15 },
 
   // Scroll content
   scroll: { paddingBottom: Spacing.huge },
 
   // Hero
-  hero:      { alignItems: 'center', paddingTop: Spacing.xl, paddingBottom: Spacing.lg, gap: 2 },
-  tempHuge:  { fontFamily: Fonts.bold, fontSize: 96, color: '#fff', lineHeight: 100, letterSpacing: -4 },
-  condition: { fontFamily: Fonts.medium, fontSize: 22, color: 'rgba(255,255,255,0.92)', marginTop: 4 },
-  feelsLike: { fontFamily: Fonts.regular, fontSize: 14, color: 'rgba(255,255,255,0.65)', marginTop: 2 },
+  hero:      { alignItems: 'center', paddingTop: Spacing.xl, paddingBottom: Spacing.lg, gap: 2, overflow: 'hidden', position: 'relative' },
+  tempHuge:  { fontFamily: Fonts.bold, fontSize: 96, lineHeight: 100, letterSpacing: -4 },
+  condition: { fontFamily: Fonts.medium, fontSize: 22, marginTop: 4 },
+  feelsLike: { fontFamily: Fonts.regular, fontSize: 14, marginTop: 2 },
 
   // Stats
-  statsRow:    { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: Radii.xl, marginHorizontal: Spacing.lg, paddingVertical: Spacing.lg, marginBottom: Spacing.lg },
+  statsRow:    { flexDirection: 'row', borderRadius: Radii.xl, borderWidth: 1, marginHorizontal: Spacing.lg, paddingVertical: Spacing.lg, marginBottom: Spacing.lg },
   stat:        { flex: 1, alignItems: 'center', gap: 4 },
-  statDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.2)' },
-  statVal:     { fontFamily: Fonts.bold, fontSize: 14, color: '#fff' },
-  statLbl:     { fontFamily: Fonts.regular, fontSize: 11, color: 'rgba(255,255,255,0.65)' },
+  statDivider: { width: 1 },
+  statVal:     { fontFamily: Fonts.bold, fontSize: 14 },
+  statLbl:     { fontFamily: Fonts.regular, fontSize: 11 },
 
   // Section
   section:      { marginHorizontal: Spacing.lg, marginBottom: Spacing.lg },
-  sectionLabel: { fontFamily: Fonts.semibold, fontSize: 12, color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: Spacing.sm },
+  sectionLabel: { fontFamily: Fonts.semibold, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: Spacing.sm },
 
   // Hourly cards
-  hourCard: { alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: Radii.lg, paddingVertical: Spacing.md, paddingHorizontal: 14, minWidth: 62 },
-  hourTime: { fontFamily: Fonts.medium, fontSize: 12, color: 'rgba(255,255,255,0.75)' },
-  hourTemp: { fontFamily: Fonts.bold, fontSize: 16, color: '#fff' },
-  hourRain: { fontFamily: Fonts.regular, fontSize: 11, color: '#90CAF9' },
+  hourCard: { alignItems: 'center', gap: 6, borderRadius: Radii.lg, borderWidth: 1, paddingVertical: Spacing.md, paddingHorizontal: 14, minWidth: 62 },
+  hourTime: { fontFamily: Fonts.medium, fontSize: 12 },
+  hourTemp: { fontFamily: Fonts.bold, fontSize: 16 },
+  hourRain: { fontFamily: Fonts.regular, fontSize: 11 },
 
   // Daily card
-  dailyCard:   { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: Radii.xl, overflow: 'hidden' },
+  dailyCard:   { borderRadius: Radii.xl, borderWidth: 1, overflow: 'hidden' },
   dailyRow:    { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: Spacing.lg, gap: Spacing.md },
-  dailyBorder: { borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' },
-  dayName:     { flex: 1, fontFamily: Fonts.medium, fontSize: 15, color: '#fff' },
-  dailyRain:   { fontFamily: Fonts.regular, fontSize: 12, color: '#90CAF9', width: 44, textAlign: 'center' },
+  dayName:     { flex: 1, fontFamily: Fonts.medium, fontSize: 15 },
+  dailyRain:   { fontFamily: Fonts.regular, fontSize: 12, width: 44, textAlign: 'center' },
   dailyTemps:  { flexDirection: 'row', gap: 10 },
-  dailyHi:     { fontFamily: Fonts.bold, fontSize: 15, color: '#fff', width: 32, textAlign: 'right' },
-  dailyLo:     { fontFamily: Fonts.regular, fontSize: 15, color: 'rgba(255,255,255,0.55)', width: 32, textAlign: 'right' },
+  dailyHi:     { fontFamily: Fonts.bold, fontSize: 15, width: 32, textAlign: 'right' },
+  dailyLo:     { fontFamily: Fonts.regular, fontSize: 15, width: 32, textAlign: 'right' },
 
   // Footer
-  credit: { textAlign: 'center', fontFamily: Fonts.regular, fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: Spacing.md },
+  credit: { textAlign: 'center', fontFamily: Fonts.regular, fontSize: 11, marginBottom: Spacing.md },
 });

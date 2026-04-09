@@ -3,6 +3,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet, Image,
   ActivityIndicator, ScrollView, Modal, Share, Dimensions,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import ScreenShell from '@/components/ScreenShell';
@@ -399,7 +400,7 @@ export default function NewsReaderScreen() {
       </ScreenShell>
 
       {/* Article detail modal */}
-      <Modal
+      <KeyboardAwareModal
         visible={selectedArticle !== null}
         animationType="slide"
         onRequestClose={() => setSelectedArticle(null)}
@@ -411,7 +412,7 @@ export default function NewsReaderScreen() {
             onClose={() => setSelectedArticle(null)}
           />
         )}
-      </Modal>
+      </KeyboardAwareModal>
     </>
   );
 }

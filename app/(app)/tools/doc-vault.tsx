@@ -12,8 +12,8 @@ import {
   Platform,
   Image,
   Switch,
-  ActivityIndicator,
-} from 'react-native';
+  ActivityIndicator,} from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -829,7 +829,7 @@ export default function DocVaultScreen() {
       {/* ══════════════════════ MODALS ══════════════════════ */}
 
       {/* ── FAB Bottom Sheet ── */}
-      <Modal visible={showFAB} transparent animationType="fade" onRequestClose={() => setShowFAB(false)}>
+      <KeyboardAwareModal visible={showFAB} transparent animationType="fade" onRequestClose={() => setShowFAB(false)}>
         <TouchableOpacity
           activeOpacity={1}
           style={styles.modalOverlay}
@@ -882,10 +882,10 @@ export default function DocVaultScreen() {
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
-      </Modal>
+      </KeyboardAwareModal>
 
       {/* ── Folder Picker Modal ── */}
-      <Modal visible={showFolderPicker} transparent animationType="fade" onRequestClose={() => { setShowFolderPicker(false); setPendingFile(null); }}>
+      <KeyboardAwareModal visible={showFolderPicker} transparent animationType="fade" onRequestClose={() => { setShowFolderPicker(false); setPendingFile(null); }}>
         <TouchableOpacity
           activeOpacity={1}
           style={styles.modalOverlay}
@@ -918,10 +918,10 @@ export default function DocVaultScreen() {
             />
           </View>
         </TouchableOpacity>
-      </Modal>
+      </KeyboardAwareModal>
 
       {/* ── Settings Modal ── */}
-      <Modal visible={showSettings} transparent animationType="fade" onRequestClose={() => setShowSettings(false)}>
+      <KeyboardAwareModal visible={showSettings} transparent animationType="fade" onRequestClose={() => setShowSettings(false)}>
         <TouchableOpacity
           activeOpacity={1}
           style={styles.modalOverlay}
@@ -1011,10 +1011,10 @@ export default function DocVaultScreen() {
             </ScrollView>
           </View>
         </TouchableOpacity>
-      </Modal>
+      </KeyboardAwareModal>
 
       {/* ── Folder Edit Modal ── */}
-      <Modal visible={showFolderEdit} transparent animationType="fade" onRequestClose={() => setShowFolderEdit(false)}>
+      <KeyboardAwareModal visible={showFolderEdit} transparent animationType="fade" onRequestClose={() => setShowFolderEdit(false)}>
         <TouchableOpacity
           activeOpacity={1}
           style={styles.modalOverlay}
@@ -1204,10 +1204,10 @@ export default function DocVaultScreen() {
             </ScrollView>
           </View>
         </TouchableOpacity>
-      </Modal>
+      </KeyboardAwareModal>
 
       {/* ── PIN Entry Overlay ── */}
-      <Modal visible={!!pinEntryFolderId} transparent animationType="fade" onRequestClose={closePinEntry}>
+      <KeyboardAwareModal visible={!!pinEntryFolderId} transparent animationType="fade" onRequestClose={closePinEntry}>
         <View style={[styles.pinOverlay, { backgroundColor: colors.overlay }]}>
           <View style={[styles.pinModal, { backgroundColor: colors.surface }]}>
             <TouchableOpacity style={styles.pinCloseBtn} onPress={closePinEntry} activeOpacity={0.7}>
@@ -1284,10 +1284,10 @@ export default function DocVaultScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
 
       {/* ── Image Preview Modal ── */}
-      <Modal visible={!!showImagePreview} transparent animationType="fade" onRequestClose={() => setShowImagePreview(null)}>
+      <KeyboardAwareModal visible={!!showImagePreview} transparent animationType="fade" onRequestClose={() => setShowImagePreview(null)}>
         <View style={[styles.previewOverlay, { backgroundColor: colors.overlay }]}>
           <View style={styles.previewHeader}>
             <TouchableOpacity onPress={() => setShowImagePreview(null)} activeOpacity={0.7}>
@@ -1313,10 +1313,10 @@ export default function DocVaultScreen() {
             </View>
           )}
         </View>
-      </Modal>
+      </KeyboardAwareModal>
 
       {/* ── File Info Modal ── */}
-      <Modal visible={!!showFileInfo} transparent animationType="fade" onRequestClose={() => setShowFileInfo(null)}>
+      <KeyboardAwareModal visible={!!showFileInfo} transparent animationType="fade" onRequestClose={() => setShowFileInfo(null)}>
         <TouchableOpacity
           activeOpacity={1}
           style={styles.modalOverlay}
@@ -1378,7 +1378,7 @@ export default function DocVaultScreen() {
             )}
           </View>
         </TouchableOpacity>
-      </Modal>
+      </KeyboardAwareModal>
     </ScreenShell>
   );
 }

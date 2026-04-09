@@ -3,6 +3,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet, Image, Dimensions, FlatList,
   ActivityIndicator, Animated, Linking, Share, Modal,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
@@ -246,7 +247,7 @@ export default function WallpaperBrowseScreen() {
         )}
 
         {/* Full-screen preview modal */}
-        <Modal visible={selectedPhoto !== null} transparent animationType="fade" onRequestClose={() => setSelectedPhoto(null)}>
+        <KeyboardAwareModal visible={selectedPhoto !== null} transparent animationType="fade" onRequestClose={() => setSelectedPhoto(null)}>
           <View style={styles.modalBg}>
             <TouchableOpacity style={styles.modalClose} onPress={() => setSelectedPhoto(null)}>
               <Ionicons name="close-circle" size={36} color="#fff" />
@@ -288,7 +289,7 @@ export default function WallpaperBrowseScreen() {
               </View>
             )}
           </View>
-        </Modal>
+        </KeyboardAwareModal>
       </View>
     </ScreenShell>
   );

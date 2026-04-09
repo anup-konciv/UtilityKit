@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert,
-  FlatList, ScrollView, Platform,
-} from 'react-native';
+  FlatList, ScrollView, Platform,} from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import DateField from '@/components/DateField';
@@ -436,7 +436,7 @@ export default function DocumentExpiryScreen() {
     const canSave = formName.trim() && formExpiryDate.trim();
 
     return (
-      <Modal visible={showAddModal} transparent animationType="slide" onRequestClose={() => { setShowAddModal(false); resetForm(); }}>
+      <KeyboardAwareModal visible={showAddModal} transparent animationType="slide" onRequestClose={() => { setShowAddModal(false); resetForm(); }}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
             <View style={styles.modalHeader}>
@@ -584,7 +584,7 @@ export default function DocumentExpiryScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
     );
   };
 
@@ -598,7 +598,7 @@ export default function DocumentExpiryScreen() {
     const progress = getValidityProgress(detailDoc);
 
     return (
-      <Modal visible={!!showDetailModal} transparent animationType="slide" onRequestClose={() => setShowDetailModal(null)}>
+      <KeyboardAwareModal visible={!!showDetailModal} transparent animationType="slide" onRequestClose={() => setShowDetailModal(null)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.surface, maxHeight: '88%' }]}>
             {/* Header */}
@@ -721,7 +721,7 @@ export default function DocumentExpiryScreen() {
             </ScrollView>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
     );
   };
 

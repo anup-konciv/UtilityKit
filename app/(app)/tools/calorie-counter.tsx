@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, KeyboardAvoidingView, Platform } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
@@ -526,11 +527,7 @@ export default function CalorieCounterScreen() {
       )}
 
       {/* Custom Add Modal */}
-      <Modal visible={showAdd} transparent animationType="fade" onRequestClose={() => setShowAdd(false)}>
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
+      <KeyboardAwareModal visible={showAdd} transparent animationType="fade" onRequestClose={() => setShowAdd(false)}>
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Add Food</Text>
@@ -616,15 +613,10 @@ export default function CalorieCounterScreen() {
             </View>
           </View>
         </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      </KeyboardAwareModal>
 
       {/* Goal Modal */}
-      <Modal visible={showGoal} transparent animationType="fade" onRequestClose={() => setShowGoal(false)}>
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
+      <KeyboardAwareModal visible={showGoal} transparent animationType="fade" onRequestClose={() => setShowGoal(false)}>
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Daily Calorie Goal</Text>
@@ -646,8 +638,7 @@ export default function CalorieCounterScreen() {
             </View>
           </View>
         </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      </KeyboardAwareModal>
     </ScreenShell>
   );
 }

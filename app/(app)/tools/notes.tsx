@@ -15,6 +15,7 @@ import {
   Share,
   ScrollView,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
@@ -115,7 +116,7 @@ function UnlockModal({
   const PAD_ROWS = [['1', '2', '3'], ['4', '5', '6'], ['7', '8', '9'], ['', '0', '⌫']];
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+    <KeyboardAwareModal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={um.overlay}>
         <View style={[um.sheet, { backgroundColor: colors.card }]}>
           <Ionicons name="lock-closed" size={32} color={ACCENT} style={{ marginBottom: Spacing.md }} />
@@ -163,7 +164,7 @@ function UnlockModal({
           </TouchableOpacity>
         </View>
       </View>
-    </Modal>
+    </KeyboardAwareModal>
   );
 }
 
@@ -278,7 +279,7 @@ function NoteEditor({
   const androidLockOverlayLift = Platform.OS === 'android' && keyboardHeight > 0 ? { paddingBottom: keyboardHeight } : null;
 
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
+    <KeyboardAwareModal visible animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={[es.root, { backgroundColor: color }]} edges={['top', 'bottom']}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
@@ -472,7 +473,7 @@ function NoteEditor({
           </KeyboardAvoidingView>
         )}
       </SafeAreaView>
-    </Modal>
+    </KeyboardAwareModal>
   );
 }
 
@@ -895,7 +896,7 @@ export default function NotesScreen() {
 
       {/* Sort modal */}
       {showSort && (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setShowSort(false)}>
+        <KeyboardAwareModal visible transparent animationType="fade" onRequestClose={() => setShowSort(false)}>
           <Pressable style={sm.overlay} onPress={() => setShowSort(false)}>
             <Pressable style={[sm.sheet, { backgroundColor: colors.card }]} onPress={() => {}}>
               <Text style={[sm.title, { color: colors.text }]}>Sort Notes</Text>
@@ -913,7 +914,7 @@ export default function NotesScreen() {
               ))}
             </Pressable>
           </Pressable>
-        </Modal>
+        </KeyboardAwareModal>
       )}
 
       {editing && (

@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { useState, useMemo, useRef, useCallback } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, type GestureResponderEvent } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { hexToRgb, rgbToHex, rgbToHsl, hslToRgb } from '@/lib/color-utils';
@@ -13,6 +14,50 @@ function hslToHex(h: number, s: number, l: number): string {
   const rgb = hslToRgb(((h % 360) + 360) % 360, s, l);
   return rgbToHex(rgb.r, rgb.g, rgb.b);
 }
+
+// ── HSV conversions for the continuous picker ────────────────────────────────
+function hsvToRgb(h: number, s: number, v: number): { r: number; g: number; b: number } {
+  const sn = s / 100, vn = v / 100;
+  const c = vn * sn;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = vn - c;
+  let rp: number, gp: number, bp: number;
+  if (h < 60)       { rp = c; gp = x; bp = 0; }
+  else if (h < 120) { rp = x; gp = c; bp = 0; }
+  else if (h < 180) { rp = 0; gp = c; bp = x; }
+  else if (h < 240) { rp = 0; gp = x; bp = c; }
+  else if (h < 300) { rp = x; gp = 0; bp = c; }
+  else              { rp = c; gp = 0; bp = x; }
+  return {
+    r: Math.round((rp + m) * 255),
+    g: Math.round((gp + m) * 255),
+    b: Math.round((bp + m) * 255),
+  };
+}
+
+function rgbToHsv(r: number, g: number, b: number): { h: number; s: number; v: number } {
+  const rn = r / 255, gn = g / 255, bn = b / 255;
+  const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn);
+  const d = max - min;
+  let h = 0;
+  if (d !== 0) {
+    if (max === rn) h = 60 * (((gn - bn) / d + 6) % 6);
+    else if (max === gn) h = 60 * ((bn - rn) / d + 2);
+    else h = 60 * ((rn - gn) / d + 4);
+  }
+  const s = max === 0 ? 0 : (d / max) * 100;
+  const v = max * 100;
+  return { h: Math.round(h), s: Math.round(s), v: Math.round(v) };
+}
+
+// Full-saturation hex for a given hue (used for the SV square gradient end).
+function pureHueHex(h: number): string {
+  const { r, g, b } = hsvToRgb(h, 100, 100);
+  return rgbToHex(r, g, b);
+}
+
+// Rainbow hue stops for the hue bar.
+const HUE_COLORS = ['#FF0000','#FFFF00','#00FF00','#00FFFF','#0000FF','#FF00FF','#FF0000'] as const;
 
 const HARMONIES = [
   { name: 'Complementary', offsets: [180] },
@@ -51,6 +96,9 @@ function generateShades(h: number, s: number, l: number): string[] {
   return shades;
 }
 
+// Checkerboard pattern dimensions for the alpha preview.
+const CHECKER_SIZE = 8;
+
 export default function ColorToolsScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -59,6 +107,7 @@ export default function ColorToolsScreen() {
   const [r, setR] = useState('99');
   const [g, setG] = useState('102');
   const [b, setB] = useState('241');
+  const [alpha, setAlpha] = useState(1); // 0-1
   // Saved palette — each entry remembers the full RGB triple.
   const palette = useToolHistory<{ hex: string; r: string; g: string; b: string }>(
     'color-palette',
@@ -66,6 +115,47 @@ export default function ColorToolsScreen() {
   );
 
   const hsl = useMemo(() => rgbToHsl(parseInt(r) || 0, parseInt(g) || 0, parseInt(b) || 0), [r, g, b]);
+  const hsv = useMemo(() => rgbToHsv(parseInt(r) || 0, parseInt(g) || 0, parseInt(b) || 0), [r, g, b]);
+
+  // ── Continuous picker state ──
+  // We track HSV for the picker, then sync back to hex/rgb when the user
+  // interacts with the picker surfaces. The picker and the text inputs are
+  // bidirectionally linked — editing hex/rgb updates the picker, and
+  // dragging on the picker updates hex/rgb.
+  const svWidth = useRef(1);
+  const svHeight = useRef(1);
+  const hueWidth = useRef(1);
+  const alphaWidth = useRef(1);
+
+  const applyHsv = useCallback((h: number, s: number, v: number) => {
+    const rgb = hsvToRgb(h, s, v);
+    setR(String(rgb.r));
+    setG(String(rgb.g));
+    setB(String(rgb.b));
+    setHexState(rgbToHex(rgb.r, rgb.g, rgb.b));
+  }, []);
+
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+  // Touch handlers — use locationX/locationY relative to the receiving View.
+  const handleSVTouch = useCallback((e: GestureResponderEvent) => {
+    const { locationX, locationY } = e.nativeEvent;
+    const s = clamp(Math.round((locationX / svWidth.current) * 100), 0, 100);
+    const v = clamp(Math.round(100 - (locationY / svHeight.current) * 100), 0, 100);
+    applyHsv(hsv.h, s, v);
+  }, [hsv.h, applyHsv]);
+
+  const handleHueTouch = useCallback((e: GestureResponderEvent) => {
+    const { locationX } = e.nativeEvent;
+    const h = clamp(Math.round((locationX / hueWidth.current) * 360), 0, 360);
+    applyHsv(h, hsv.s, hsv.v);
+  }, [hsv.s, hsv.v, applyHsv]);
+
+  const handleAlphaTouch = useCallback((e: GestureResponderEvent) => {
+    const { locationX } = e.nativeEvent;
+    const a = clamp(Math.round((locationX / alphaWidth.current) * 100) / 100, 0, 1);
+    setAlpha(a);
+  }, []);
 
   const harmonies = useMemo(() =>
     HARMONIES.map(h => ({
@@ -108,6 +198,114 @@ export default function ColorToolsScreen() {
       {/* Swatch */}
       <View style={[styles.swatch, { backgroundColor: hex }]}>
         <Text style={[styles.swatchLabel, { color: hsl.l > 55 ? '#000' : '#fff' }]}>{hex}</Text>
+      </View>
+
+      {/* ── Continuous color picker ── */}
+      <Text style={[styles.secLabel, { marginBottom: Spacing.sm }]}>Color Picker</Text>
+      <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        {/* Saturation-Value square */}
+        <View
+          style={styles.svSquare}
+          onLayout={e => { svWidth.current = e.nativeEvent.layout.width; svHeight.current = e.nativeEvent.layout.height; }}
+          onStartShouldSetResponder={() => true}
+          onMoveShouldSetResponder={() => true}
+          onResponderGrant={handleSVTouch}
+          onResponderMove={handleSVTouch}
+        >
+          {/* Horizontal gradient: white → pure hue */}
+          <LinearGradient
+            colors={['#FFFFFF', pureHueHex(hsv.h)]}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+          {/* Vertical gradient: transparent → black (overlaid) */}
+          <LinearGradient
+            colors={['transparent', '#000000']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={StyleSheet.absoluteFillObject}
+          />
+          {/* Selection crosshair */}
+          <View
+            style={[
+              styles.svThumb,
+              {
+                left: `${hsv.s}%`,
+                top: `${100 - hsv.v}%`,
+                borderColor: hsv.v > 50 ? '#000' : '#fff',
+              },
+            ]}
+            pointerEvents="none"
+          />
+        </View>
+
+        {/* Hue bar */}
+        <Text style={[styles.pickerLabel, { color: colors.textMuted }]}>Hue</Text>
+        <View
+          style={styles.hueBar}
+          onLayout={e => { hueWidth.current = e.nativeEvent.layout.width; }}
+          onStartShouldSetResponder={() => true}
+          onMoveShouldSetResponder={() => true}
+          onResponderGrant={handleHueTouch}
+          onResponderMove={handleHueTouch}
+        >
+          <LinearGradient
+            colors={HUE_COLORS}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={[StyleSheet.absoluteFillObject, { borderRadius: Radii.sm }]}
+          />
+          {/* Thumb */}
+          <View
+            style={[
+              styles.hueThumb,
+              { left: `${(hsv.h / 360) * 100}%` },
+            ]}
+            pointerEvents="none"
+          />
+        </View>
+
+        {/* Opacity bar */}
+        <Text style={[styles.pickerLabel, { color: colors.textMuted }]}>
+          Opacity — {Math.round(alpha * 100)}%
+        </Text>
+        <View
+          style={styles.alphaBar}
+          onLayout={e => { alphaWidth.current = e.nativeEvent.layout.width; }}
+          onStartShouldSetResponder={() => true}
+          onMoveShouldSetResponder={() => true}
+          onResponderGrant={handleAlphaTouch}
+          onResponderMove={handleAlphaTouch}
+        >
+          {/* Checkerboard background to visualize transparency */}
+          <View style={[StyleSheet.absoluteFillObject, styles.checkerboard]} />
+          {/* Color → transparent gradient */}
+          <LinearGradient
+            colors={[hex, 'transparent']}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={[StyleSheet.absoluteFillObject, { borderRadius: Radii.sm }]}
+          />
+          <View
+            style={[styles.hueThumb, { left: `${alpha * 100}%` }]}
+            pointerEvents="none"
+          />
+        </View>
+
+        {/* RGBA output */}
+        <View style={[styles.rgbaRow, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+          <View style={[styles.rgbaDot, { backgroundColor: hex, opacity: alpha }]} />
+          <Text style={[styles.rgbaText, { color: colors.text }]} selectable>
+            rgba({r}, {g}, {b}, {alpha.toFixed(2)})
+          </Text>
+          <TouchableOpacity
+            onPress={() => copyText(`rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`, 'RGBA')}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="copy-outline" size={16} color="#EC4899" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* HEX */}
@@ -368,6 +566,86 @@ const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
     swatch: { height: 100, borderRadius: Radii.xl, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.lg },
     swatchLabel: { fontSize: 22, fontFamily: Fonts.bold, letterSpacing: 2 },
     section: { borderRadius: Radii.lg, borderWidth: 1, padding: Spacing.lg, marginBottom: Spacing.lg },
+    // ── Continuous picker ──
+    svSquare: {
+      width: '100%',
+      aspectRatio: 1.4,
+      borderRadius: Radii.md,
+      overflow: 'hidden',
+      marginBottom: Spacing.md,
+    },
+    svThumb: {
+      position: 'absolute',
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      borderWidth: 2.5,
+      marginLeft: -11,
+      marginTop: -11,
+    },
+    pickerLabel: {
+      fontSize: 11,
+      fontFamily: Fonts.semibold,
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+      marginBottom: 6,
+    },
+    hueBar: {
+      height: 28,
+      borderRadius: Radii.sm,
+      overflow: 'hidden',
+      marginBottom: Spacing.md,
+      justifyContent: 'center',
+    },
+    hueThumb: {
+      position: 'absolute',
+      width: 8,
+      height: 28,
+      borderRadius: 4,
+      backgroundColor: '#fff',
+      marginLeft: -4,
+      borderWidth: 1.5,
+      borderColor: 'rgba(0,0,0,0.3)',
+      // Shadow for visibility over any color
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.3,
+      shadowRadius: 2,
+      elevation: 3,
+    },
+    alphaBar: {
+      height: 28,
+      borderRadius: Radii.sm,
+      overflow: 'hidden',
+      marginBottom: Spacing.md,
+      justifyContent: 'center',
+    },
+    checkerboard: {
+      // Simple two-tone checkerboard approximation using background color.
+      // True checkerboard would need an image or tiled Views — this
+      // light gray is a reasonable stand-in for "transparency".
+      backgroundColor: '#E5E7EB',
+      borderRadius: Radii.sm,
+    },
+    rgbaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: 8,
+      borderRadius: Radii.md,
+      borderWidth: 1,
+    },
+    rgbaDot: {
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+    },
+    rgbaText: {
+      flex: 1,
+      fontSize: 13,
+      fontFamily: Fonts.medium,
+    },
     secRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
     secLabel: { fontSize: 11, fontFamily: Fonts.bold, color: c.textMuted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: Spacing.sm },
     row: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },

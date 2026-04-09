@@ -103,6 +103,11 @@ export default function ScreenShell({
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={false}
+            // iOS 15+ natively adjusts scroll insets so the focused
+            // TextInput stays visible above the keyboard. Works better
+            // than the KAV wrapper for scrollable content because it
+            // handles the offset calculation automatically.
+            automaticallyAdjustKeyboardInsets
           >
             {children}
           </ScrollView>

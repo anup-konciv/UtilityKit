@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, Modal, FlatList, Animated, Alert,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
@@ -176,7 +177,7 @@ export default function FlashcardsScreen() {
         )}
 
         {/* Add/Edit Deck Modal */}
-        <Modal visible={showAddDeck} transparent animationType="fade" onRequestClose={() => setShowAddDeck(false)}>
+        <KeyboardAwareModal visible={showAddDeck} transparent animationType="fade" onRequestClose={() => setShowAddDeck(false)}>
           <View style={styles.modalBg}>
             <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>{editDeckId ? 'Edit Deck' : 'New Deck'}</Text>
@@ -207,7 +208,7 @@ export default function FlashcardsScreen() {
               </View>
             </View>
           </View>
-        </Modal>
+      </KeyboardAwareModal>
       </ScreenShell>
     );
   }
@@ -286,7 +287,7 @@ export default function FlashcardsScreen() {
       )}
 
       {/* Add Card Modal */}
-      <Modal visible={showAddCard} transparent animationType="fade" onRequestClose={() => setShowAddCard(false)}>
+      <KeyboardAwareModal visible={showAddCard} transparent animationType="fade" onRequestClose={() => setShowAddCard(false)}>
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>New Card</Text>
@@ -319,7 +320,7 @@ export default function FlashcardsScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
     </ScreenShell>
   );
 }

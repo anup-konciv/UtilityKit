@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert, ScrollView,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
@@ -390,7 +391,7 @@ export default function BabyCareScreen() {
       )}
 
       {/* Profile Modal */}
-      <Modal visible={showProfile} transparent animationType="fade" onRequestClose={() => setShowProfile(false)}>
+      <KeyboardAwareModal visible={showProfile} transparent animationType="fade" onRequestClose={() => setShowProfile(false)}>
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Baby Profile</Text>
@@ -430,10 +431,10 @@ export default function BabyCareScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
 
       {/* Add Modal */}
-      <Modal visible={showAdd} transparent animationType="fade" onRequestClose={() => setShowAdd(false)}>
+      <KeyboardAwareModal visible={showAdd} transparent animationType="fade" onRequestClose={() => setShowAdd(false)}>
         <View style={styles.modalBg}>
           <ScrollView contentContainerStyle={{ justifyContent: 'center', flexGrow: 1 }}>
           <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
@@ -586,7 +587,7 @@ export default function BabyCareScreen() {
           </View>
           </ScrollView>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
     </ScreenShell>
   );
 }

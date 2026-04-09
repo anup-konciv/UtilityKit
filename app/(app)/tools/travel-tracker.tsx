@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert, ScrollView,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
@@ -334,7 +335,7 @@ export default function TravelTrackerScreen() {
       })}
 
       {/* Add/Edit Trip Modal */}
-      <Modal visible={showAdd} transparent animationType="fade" onRequestClose={() => setShowAdd(false)}>
+      <KeyboardAwareModal visible={showAdd} transparent animationType="fade" onRequestClose={() => setShowAdd(false)}>
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>{editId ? 'Edit Trip' : 'New Trip'}</Text>
@@ -384,10 +385,10 @@ export default function TravelTrackerScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
 
       {/* Expense Modal */}
-      <Modal visible={showExpense} transparent animationType="fade" onRequestClose={() => setShowExpense(false)}>
+      <KeyboardAwareModal visible={showExpense} transparent animationType="fade" onRequestClose={() => setShowExpense(false)}>
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Add Expense</Text>
@@ -413,7 +414,7 @@ export default function TravelTrackerScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
     </ScreenShell>
   );
 }

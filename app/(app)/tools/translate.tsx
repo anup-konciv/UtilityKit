@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '@/components/ThemeProvider';
@@ -86,11 +87,7 @@ function LangPicker({
   }, [search]);
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
+    <KeyboardAwareModal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={[ps.backdrop, { backgroundColor: '#00000066' }]}>
         <View style={[ps.sheet, { backgroundColor: colors.bg }]}>
           {/* Header */}
@@ -142,8 +139,7 @@ function LangPicker({
           />
         </View>
       </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      </KeyboardAwareModal>
   );
 }
 
@@ -298,11 +294,16 @@ export default function TranslateScreen() {
         </View>
       </View>
 
-      <View style={[styles.providerNote, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Ionicons name="shield-checkmark-outline" size={16} color={ACCENT} />
-        <Text style={[styles.providerNoteText, { color: colors.textMuted }]}>
-          Primary source: LibreTranslate-compatible API. Fallback: MyMemory only if the primary provider fails.
-        </Text>
+      <View style={[styles.providerNote, { backgroundColor: '#F59E0B12', borderColor: '#F59E0B40' }]}>
+        <Ionicons name="information-circle-outline" size={18} color="#F59E0B" />
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.providerNoteTitle, { color: '#92400E' }]}>
+            Open-source translation engine
+          </Text>
+          <Text style={[styles.providerNoteText, { color: colors.textMuted }]}>
+            This tool currently uses free open-source APIs (LibreTranslate / MyMemory) for translations. Results may not always be accurate. A higher-quality translation engine is planned for a future update.
+          </Text>
+        </View>
       </View>
 
       {/* Translate Button */}
@@ -438,19 +439,23 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
     clearBtn: { padding: 2 },
     providerNote: {
       flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
+      alignItems: 'flex-start',
+      gap: 10,
       borderWidth: 1,
       borderRadius: Radii.lg,
       paddingHorizontal: Spacing.md,
-      paddingVertical: 10,
+      paddingVertical: Spacing.md,
       marginBottom: Spacing.md,
     },
+    providerNoteTitle: {
+      fontSize: 13,
+      fontFamily: Fonts.bold,
+      marginBottom: 3,
+    },
     providerNoteText: {
-      flex: 1,
       fontSize: 12,
       lineHeight: 18,
-      fontFamily: Fonts.medium,
+      fontFamily: Fonts.regular,
     },
     translateBtn: {
       flexDirection: 'row',

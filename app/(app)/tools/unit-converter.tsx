@@ -1,283 +1,540 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
-import { loadJSON, KEYS } from '@/lib/storage';
+import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
+import { withAlpha } from '@/lib/color-utils';
+import { haptics } from '@/lib/haptics';
 
-type UnitDef = { label: string; toBase: (v: number) => number; fromBase: (v: number) => number };
-type Category = { name: string; units: UnitDef[] };
+type ViewMode = 'modern' | 'simple';
+const VIEW_PREF_KEY = 'uk_unit_converter_view';
+
+const ACCENT = '#14B8A6';
+
+// ── Unit data ────────────────────────────────────────────────────────────────
+type UnitDef = { label: string; short: string; toBase: (v: number) => number; fromBase: (v: number) => number };
+type Category = { name: string; icon: keyof typeof Ionicons.glyphMap; units: UnitDef[] };
 
 const CATEGORIES: Category[] = [
   {
-    name: 'Length',
+    name: 'Length', icon: 'resize-outline',
     units: [
-      { label: 'Meter', toBase: v => v, fromBase: v => v },
-      { label: 'Kilometer', toBase: v => v * 1000, fromBase: v => v / 1000 },
-      { label: 'Centimeter', toBase: v => v / 100, fromBase: v => v * 100 },
-      { label: 'Millimeter', toBase: v => v / 1000, fromBase: v => v * 1000 },
-      { label: 'Mile', toBase: v => v * 1609.34, fromBase: v => v / 1609.34 },
-      { label: 'Yard', toBase: v => v * 0.9144, fromBase: v => v / 0.9144 },
-      { label: 'Foot', toBase: v => v * 0.3048, fromBase: v => v / 0.3048 },
-      { label: 'Inch', toBase: v => v * 0.0254, fromBase: v => v / 0.0254 },
+      { label: 'Meter', short: 'm', toBase: v => v, fromBase: v => v },
+      { label: 'Kilometer', short: 'km', toBase: v => v * 1000, fromBase: v => v / 1000 },
+      { label: 'Centimeter', short: 'cm', toBase: v => v / 100, fromBase: v => v * 100 },
+      { label: 'Millimeter', short: 'mm', toBase: v => v / 1000, fromBase: v => v * 1000 },
+      { label: 'Mile', short: 'mi', toBase: v => v * 1609.34, fromBase: v => v / 1609.34 },
+      { label: 'Yard', short: 'yd', toBase: v => v * 0.9144, fromBase: v => v / 0.9144 },
+      { label: 'Foot', short: 'ft', toBase: v => v * 0.3048, fromBase: v => v / 0.3048 },
+      { label: 'Inch', short: 'in', toBase: v => v * 0.0254, fromBase: v => v / 0.0254 },
     ],
   },
   {
-    name: 'Weight',
+    name: 'Weight', icon: 'scale-outline',
     units: [
-      { label: 'Kilogram', toBase: v => v, fromBase: v => v },
-      { label: 'Gram', toBase: v => v / 1000, fromBase: v => v * 1000 },
-      { label: 'Milligram', toBase: v => v / 1e6, fromBase: v => v * 1e6 },
-      { label: 'Pound', toBase: v => v * 0.453592, fromBase: v => v / 0.453592 },
-      { label: 'Ounce', toBase: v => v * 0.0283495, fromBase: v => v / 0.0283495 },
-      { label: 'Tonne', toBase: v => v * 1000, fromBase: v => v / 1000 },
-      { label: 'Stone', toBase: v => v * 6.35029, fromBase: v => v / 6.35029 },
+      { label: 'Kilogram', short: 'kg', toBase: v => v, fromBase: v => v },
+      { label: 'Gram', short: 'g', toBase: v => v / 1000, fromBase: v => v * 1000 },
+      { label: 'Milligram', short: 'mg', toBase: v => v / 1e6, fromBase: v => v * 1e6 },
+      { label: 'Pound', short: 'lb', toBase: v => v * 0.453592, fromBase: v => v / 0.453592 },
+      { label: 'Ounce', short: 'oz', toBase: v => v * 0.0283495, fromBase: v => v / 0.0283495 },
+      { label: 'Tonne', short: 't', toBase: v => v * 1000, fromBase: v => v / 1000 },
     ],
   },
   {
-    name: 'Temperature',
+    name: 'Temp', icon: 'thermometer-outline',
     units: [
-      { label: 'Celsius', toBase: v => v, fromBase: v => v },
-      { label: 'Fahrenheit', toBase: v => (v - 32) * 5 / 9, fromBase: v => v * 9 / 5 + 32 },
-      { label: 'Kelvin', toBase: v => v - 273.15, fromBase: v => v + 273.15 },
+      { label: 'Celsius', short: '°C', toBase: v => v, fromBase: v => v },
+      { label: 'Fahrenheit', short: '°F', toBase: v => (v - 32) * 5 / 9, fromBase: v => v * 9 / 5 + 32 },
+      { label: 'Kelvin', short: 'K', toBase: v => v - 273.15, fromBase: v => v + 273.15 },
     ],
   },
   {
-    name: 'Speed',
+    name: 'Speed', icon: 'speedometer-outline',
     units: [
-      { label: 'km/h', toBase: v => v / 3.6, fromBase: v => v * 3.6 },
-      { label: 'm/s', toBase: v => v, fromBase: v => v },
-      { label: 'mph', toBase: v => v * 0.44704, fromBase: v => v / 0.44704 },
-      { label: 'Knot', toBase: v => v * 0.514444, fromBase: v => v / 0.514444 },
+      { label: 'km/h', short: 'km/h', toBase: v => v / 3.6, fromBase: v => v * 3.6 },
+      { label: 'm/s', short: 'm/s', toBase: v => v, fromBase: v => v },
+      { label: 'mph', short: 'mph', toBase: v => v * 0.44704, fromBase: v => v / 0.44704 },
+      { label: 'Knot', short: 'kn', toBase: v => v * 0.514444, fromBase: v => v / 0.514444 },
     ],
   },
   {
-    name: 'Volume',
+    name: 'Volume', icon: 'beaker-outline',
     units: [
-      { label: 'Liter', toBase: v => v / 1000, fromBase: v => v * 1000 },
-      { label: 'Milliliter', toBase: v => v / 1e6, fromBase: v => v * 1e6 },
-      { label: 'Cubic m', toBase: v => v, fromBase: v => v },
-      { label: 'Gallon', toBase: v => v * 0.00378541, fromBase: v => v / 0.00378541 },
-      { label: 'Pint', toBase: v => v * 0.000473176, fromBase: v => v / 0.000473176 },
-      { label: 'Cup', toBase: v => v * 0.000236588, fromBase: v => v / 0.000236588 },
+      { label: 'Liter', short: 'L', toBase: v => v / 1000, fromBase: v => v * 1000 },
+      { label: 'Milliliter', short: 'mL', toBase: v => v / 1e6, fromBase: v => v * 1e6 },
+      { label: 'Cubic m', short: 'm³', toBase: v => v, fromBase: v => v },
+      { label: 'Gallon', short: 'gal', toBase: v => v * 0.00378541, fromBase: v => v / 0.00378541 },
+      { label: 'Cup', short: 'cup', toBase: v => v * 0.000236588, fromBase: v => v / 0.000236588 },
     ],
   },
   {
-    name: 'Area',
+    name: 'Area', icon: 'grid-outline',
     units: [
-      { label: 'sq meter', toBase: v => v, fromBase: v => v },
-      { label: 'sq km', toBase: v => v * 1e6, fromBase: v => v / 1e6 },
-      { label: 'Hectare', toBase: v => v * 10000, fromBase: v => v / 10000 },
-      { label: 'Acre', toBase: v => v * 4046.86, fromBase: v => v / 4046.86 },
-      { label: 'sq foot', toBase: v => v * 0.092903, fromBase: v => v / 0.092903 },
-      { label: 'sq inch', toBase: v => v * 0.00064516, fromBase: v => v / 0.00064516 },
+      { label: 'sq meter', short: 'm²', toBase: v => v, fromBase: v => v },
+      { label: 'sq km', short: 'km²', toBase: v => v * 1e6, fromBase: v => v / 1e6 },
+      { label: 'Hectare', short: 'ha', toBase: v => v * 10000, fromBase: v => v / 10000 },
+      { label: 'Acre', short: 'ac', toBase: v => v * 4046.86, fromBase: v => v / 4046.86 },
+      { label: 'sq foot', short: 'ft²', toBase: v => v * 0.092903, fromBase: v => v / 0.092903 },
     ],
   },
   {
-    name: 'Time',
+    name: 'Time', icon: 'time-outline',
     units: [
-      { label: 'Second', toBase: v => v, fromBase: v => v },
-      { label: 'Minute', toBase: v => v * 60, fromBase: v => v / 60 },
-      { label: 'Hour', toBase: v => v * 3600, fromBase: v => v / 3600 },
-      { label: 'Day', toBase: v => v * 86400, fromBase: v => v / 86400 },
-      { label: 'Week', toBase: v => v * 604800, fromBase: v => v / 604800 },
+      { label: 'Second', short: 's', toBase: v => v, fromBase: v => v },
+      { label: 'Minute', short: 'min', toBase: v => v * 60, fromBase: v => v / 60 },
+      { label: 'Hour', short: 'hr', toBase: v => v * 3600, fromBase: v => v / 3600 },
+      { label: 'Day', short: 'd', toBase: v => v * 86400, fromBase: v => v / 86400 },
+      { label: 'Week', short: 'wk', toBase: v => v * 604800, fromBase: v => v / 604800 },
     ],
   },
   {
-    name: 'Energy',
+    name: 'Data', icon: 'server-outline',
     units: [
-      { label: 'Joule', toBase: v => v, fromBase: v => v },
-      { label: 'Kilojoule', toBase: v => v * 1000, fromBase: v => v / 1000 },
-      { label: 'Calorie', toBase: v => v * 4.184, fromBase: v => v / 4.184 },
-      { label: 'Kilocalorie', toBase: v => v * 4184, fromBase: v => v / 4184 },
-      { label: 'Watt-hour', toBase: v => v * 3600, fromBase: v => v / 3600 },
-      { label: 'kWh', toBase: v => v * 3600000, fromBase: v => v / 3600000 },
+      { label: 'Byte', short: 'B', toBase: v => v, fromBase: v => v },
+      { label: 'Kilobyte', short: 'KB', toBase: v => v * 1024, fromBase: v => v / 1024 },
+      { label: 'Megabyte', short: 'MB', toBase: v => v * 1048576, fromBase: v => v / 1048576 },
+      { label: 'Gigabyte', short: 'GB', toBase: v => v * 1073741824, fromBase: v => v / 1073741824 },
+      { label: 'Terabyte', short: 'TB', toBase: v => v * 1099511627776, fromBase: v => v / 1099511627776 },
     ],
   },
   {
-    name: 'Data',
+    name: 'Energy', icon: 'flash-outline',
     units: [
-      { label: 'Byte', toBase: v => v, fromBase: v => v },
-      { label: 'Kilobyte', toBase: v => v * 1024, fromBase: v => v / 1024 },
-      { label: 'Megabyte', toBase: v => v * 1048576, fromBase: v => v / 1048576 },
-      { label: 'Gigabyte', toBase: v => v * 1073741824, fromBase: v => v / 1073741824 },
-      { label: 'Terabyte', toBase: v => v * 1099511627776, fromBase: v => v / 1099511627776 },
-      { label: 'Bit', toBase: v => v / 8, fromBase: v => v * 8 },
+      { label: 'Joule', short: 'J', toBase: v => v, fromBase: v => v },
+      { label: 'Kilojoule', short: 'kJ', toBase: v => v * 1000, fromBase: v => v / 1000 },
+      { label: 'Calorie', short: 'cal', toBase: v => v * 4.184, fromBase: v => v / 4.184 },
+      { label: 'Kilocalorie', short: 'kcal', toBase: v => v * 4184, fromBase: v => v / 4184 },
+      { label: 'kWh', short: 'kWh', toBase: v => v * 3600000, fromBase: v => v / 3600000 },
     ],
   },
   {
-    name: 'Pressure',
+    name: 'Pressure', icon: 'fitness-outline',
     units: [
-      { label: 'Pascal', toBase: v => v, fromBase: v => v },
-      { label: 'kPa', toBase: v => v * 1000, fromBase: v => v / 1000 },
-      { label: 'Bar', toBase: v => v * 100000, fromBase: v => v / 100000 },
-      { label: 'Atm', toBase: v => v * 101325, fromBase: v => v / 101325 },
-      { label: 'PSI', toBase: v => v * 6894.76, fromBase: v => v / 6894.76 },
-      { label: 'mmHg', toBase: v => v * 133.322, fromBase: v => v / 133.322 },
-      { label: 'Torr', toBase: v => v * 133.322, fromBase: v => v / 133.322 },
-    ],
-  },
-  {
-    name: 'Fuel',
-    units: [
-      { label: 'km/L', toBase: v => v, fromBase: v => v },
-      { label: 'L/100km', toBase: v => v === 0 ? 0 : 100 / v, fromBase: v => v === 0 ? 0 : 100 / v },
-      { label: 'MPG (US)', toBase: v => v * 0.425144, fromBase: v => v / 0.425144 },
-      { label: 'MPG (UK)', toBase: v => v * 0.354006, fromBase: v => v / 0.354006 },
+      { label: 'Pascal', short: 'Pa', toBase: v => v, fromBase: v => v },
+      { label: 'kPa', short: 'kPa', toBase: v => v * 1000, fromBase: v => v / 1000 },
+      { label: 'Bar', short: 'bar', toBase: v => v * 100000, fromBase: v => v / 100000 },
+      { label: 'Atm', short: 'atm', toBase: v => v * 101325, fromBase: v => v / 101325 },
+      { label: 'PSI', short: 'psi', toBase: v => v * 6894.76, fromBase: v => v / 6894.76 },
     ],
   },
 ];
 
-// Map default units preference to initial category & unit indices
-const IMPERIAL_DEFAULTS: Record<string, { from: number; to: number }> = {
-  0: { from: 6, to: 0 },  // Length: Foot → Meter
-  1: { from: 3, to: 0 },  // Weight: Pound → Kilogram
-  2: { from: 1, to: 0 },  // Temperature: Fahrenheit → Celsius
-  3: { from: 2, to: 0 },  // Speed: mph → m/s
-  4: { from: 3, to: 0 },  // Volume: Gallon → Cubic m
-};
+function fmt(n: number): string {
+  if (!isFinite(n)) return '—';
+  const s = parseFloat(n.toPrecision(8));
+  if (Math.abs(s) >= 1e9 || (Math.abs(s) < 0.0001 && s !== 0)) return s.toExponential(3);
+  return s.toLocaleString('en', { maximumFractionDigits: 6 });
+}
 
 export default function UnitConverterScreen() {
   const { colors } = useAppTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const s = useMemo(() => createStyles(colors), [colors]);
+
   const [catIdx, setCatIdx] = useState(0);
   const [fromIdx, setFromIdx] = useState(0);
   const [toIdx, setToIdx] = useState(1);
   const [value, setValue] = useState('1');
-  const [loaded, setLoaded] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('modern');
 
-  // Apply default units preference on first load
   useEffect(() => {
     loadJSON<'metric' | 'imperial'>(KEYS.defaultUnits, 'metric').then(pref => {
-      if (pref === 'imperial') {
-        const imp = IMPERIAL_DEFAULTS[0];
-        if (imp) { setFromIdx(imp.from); setToIdx(imp.to); }
-      }
-      setLoaded(true);
+      if (pref === 'imperial' && catIdx === 0) { setFromIdx(6); setToIdx(0); }
     });
+    loadJSON<ViewMode>(VIEW_PREF_KEY, 'modern').then(setViewMode);
   }, []);
 
+  const toggleView = useCallback(() => {
+    const next: ViewMode = viewMode === 'modern' ? 'simple' : 'modern';
+    setViewMode(next);
+    saveJSON(VIEW_PREF_KEY, next);
+    haptics.tap();
+  }, [viewMode]);
+
   const cat = CATEGORIES[catIdx];
+  const fromUnit = cat.units[fromIdx] ?? cat.units[0];
+  const toUnit = cat.units[toIdx] ?? cat.units[1];
 
   const result = useMemo(() => {
     const v = parseFloat(value);
     if (isNaN(v)) return '';
-    const base = cat.units[fromIdx].toBase(v);
-    const res = cat.units[toIdx].fromBase(base);
-    return parseFloat(res.toPrecision(8)).toString();
-  }, [value, catIdx, fromIdx, toIdx]);
+    const base = fromUnit.toBase(v);
+    return fmt(toUnit.fromBase(base));
+  }, [value, fromUnit, toUnit]);
 
-  const swap = () => {
+  // All-units grid: convert the current value to every unit in the category.
+  const allConversions = useMemo(() => {
+    const v = parseFloat(value);
+    if (isNaN(v)) return [];
+    const base = fromUnit.toBase(v);
+    return cat.units.map((u, i) => ({
+      label: u.label,
+      short: u.short,
+      value: fmt(u.fromBase(base)),
+      isCurrent: i === fromIdx,
+    }));
+  }, [value, fromUnit, cat.units, fromIdx]);
+
+  const swap = useCallback(() => {
+    haptics.tap();
     setFromIdx(toIdx);
     setToIdx(fromIdx);
-  };
+  }, [fromIdx, toIdx]);
 
-  const tempHint = useMemo(() => {
-    if (cat.name !== 'Temperature') return '';
-    const v = parseFloat(value);
-    if (isNaN(v)) return '';
-    const celsius = cat.units[fromIdx].toBase(v);
-    const hints: [number, string][] = [[0, '❄️ Freezing'], [10, '🥶 Very cold'], [20, '🌤️ Cool'], [30, '☀️ Warm'], [40, '🌡️ Hot'], [Infinity, '🔥 Very hot']];
-    return `${celsius.toFixed(2)}°C — ${(hints.find(([t]) => celsius <= t) ?? hints[hints.length - 1])[1]}`;
-  }, [value, catIdx, fromIdx]);
+  const selectCategory = useCallback((i: number) => {
+    setCatIdx(i);
+    setFromIdx(0);
+    setToIdx(Math.min(1, CATEGORIES[i].units.length - 1));
+  }, []);
 
-  return (
-    <ScreenShell title="Unit Converter" accentColor="#14B8A6">
-      {/* Category tabs */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: Spacing.lg }} contentContainerStyle={{ gap: 7 }}>
-        {CATEGORIES.map((c, i) => (
-          <TouchableOpacity
-            key={c.name}
-            style={[styles.catTab, catIdx === i && { backgroundColor: '#14B8A6', borderColor: '#14B8A6' }]}
-            onPress={() => { setCatIdx(i); setFromIdx(0); setToIdx(1); }}
-          >
-            <Text style={[styles.catTabText, { color: catIdx === i ? '#fff' : colors.textMuted }]}>{c.name}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+  // Cycle through units on tap — faster than opening a picker.
+  const cycleFrom = useCallback(() => {
+    setFromIdx(i => (i + 1) % cat.units.length);
+  }, [cat.units.length]);
+  const cycleTo = useCallback(() => {
+    setToIdx(i => (i + 1) % cat.units.length);
+  }, [cat.units.length]);
 
-      {/* Converter card */}
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        {/* Value input */}
-        <Text style={styles.label}>Value</Text>
+  // ── Simple view: compact From → To with inline unit selectors ──
+  const renderSimpleView = () => (
+    <>
+      {/* Value input */}
+      <View style={[s.simpleCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[s.simpleLabel, { color: colors.textMuted }]}>Value</Text>
         <TextInput
-          style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
+          style={[s.simpleInput, { backgroundColor: colors.inputBg, borderColor: colors.border, color: colors.text }]}
           value={value}
           onChangeText={setValue}
           keyboardType="numeric"
           placeholder="Enter value"
           placeholderTextColor={colors.textMuted}
         />
+      </View>
 
-        {/* From / To */}
-        <View style={styles.convRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>From</Text>
-            <ScrollView style={[styles.pickerBox, { backgroundColor: colors.inputBg, borderColor: colors.border }]} nestedScrollEnabled>
-              {cat.units.map((u, i) => (
-                <TouchableOpacity
-                  key={u.label}
-                  style={[styles.pickerItem, fromIdx === i && { backgroundColor: '#14B8A620' }]}
-                  onPress={() => setFromIdx(i)}
-                >
-                  <Text style={[styles.pickerItemText, { color: fromIdx === i ? '#14B8A6' : colors.text }]}>{u.label}</Text>
-                  {fromIdx === i && <Ionicons name="checkmark" size={14} color="#14B8A6" />}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
+      {/* From */}
+      <View style={[s.simpleCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[s.simpleLabel, { color: colors.textMuted }]}>From</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.unitChipRow}>
+          {cat.units.map((u, i) => {
+            const active = fromIdx === i;
+            return (
+              <TouchableOpacity
+                key={u.label}
+                style={[s.unitChip, {
+                  backgroundColor: active ? ACCENT : colors.inputBg,
+                  borderColor: active ? ACCENT : colors.border,
+                }]}
+                onPress={() => setFromIdx(i)}
+              >
+                <Text style={[s.unitChipText, { color: active ? '#fff' : colors.text }]}>{u.short}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
-          <TouchableOpacity style={[styles.swapBtn, { backgroundColor: '#14B8A620' }]} onPress={swap}>
-            <Ionicons name="swap-horizontal" size={22} color="#14B8A6" />
-          </TouchableOpacity>
+      {/* Swap */}
+      <View style={{ alignItems: 'center', marginVertical: 4 }}>
+        <TouchableOpacity style={[s.swapBtn, { backgroundColor: ACCENT }]} onPress={swap} activeOpacity={0.8}>
+          <Ionicons name="swap-vertical" size={18} color="#fff" />
+        </TouchableOpacity>
+      </View>
 
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>To</Text>
-            <ScrollView style={[styles.pickerBox, { backgroundColor: colors.inputBg, borderColor: colors.border }]} nestedScrollEnabled>
-              {cat.units.map((u, i) => (
-                <TouchableOpacity
-                  key={u.label}
-                  style={[styles.pickerItem, toIdx === i && { backgroundColor: '#14B8A620' }]}
-                  onPress={() => setToIdx(i)}
-                >
-                  <Text style={[styles.pickerItemText, { color: toIdx === i ? '#14B8A6' : colors.text }]}>{u.label}</Text>
-                  {toIdx === i && <Ionicons name="checkmark" size={14} color="#14B8A6" />}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
+      {/* To */}
+      <View style={[s.simpleCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[s.simpleLabel, { color: colors.textMuted }]}>To</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.unitChipRow}>
+          {cat.units.map((u, i) => {
+            const active = toIdx === i;
+            return (
+              <TouchableOpacity
+                key={u.label}
+                style={[s.unitChip, {
+                  backgroundColor: active ? ACCENT : colors.inputBg,
+                  borderColor: active ? ACCENT : colors.border,
+                }]}
+                onPress={() => setToIdx(i)}
+              >
+                <Text style={[s.unitChipText, { color: active ? '#fff' : colors.text }]}>{u.short}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
 
       {/* Result */}
-      {result !== '' && (
-        <View style={[styles.resultBox, { backgroundColor: '#14B8A615', borderColor: '#14B8A6' }]}>
-          <Text style={[styles.resultLabel, { color: colors.textMuted }]}>Result</Text>
-          <Text style={[styles.resultValue, { color: '#14B8A6' }]}>
-            {result} {cat.units[toIdx].label}
-          </Text>
-          {tempHint !== '' && <Text style={[styles.hint, { color: colors.textMuted }]}>{tempHint}</Text>}
+      <View style={[s.simpleResult, { backgroundColor: withAlpha(ACCENT, '10'), borderColor: withAlpha(ACCENT, '30') }]}>
+        <Text style={[s.simpleResultLabel, { color: colors.textMuted }]}>
+          {value || '0'} {fromUnit.short} =
+        </Text>
+        <Text style={[s.simpleResultValue, { color: ACCENT }]}>{result || '—'} {toUnit.short}</Text>
+      </View>
+    </>
+  );
+
+  // ── Modern view (the existing rich view) ──
+  const renderModernView = () => (
+    <>
+      {/* Converter card */}
+      <View style={[s.converterCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        {/* FROM */}
+        <View style={s.unitSection}>
+          <TouchableOpacity style={[s.unitPill, { borderColor: ACCENT, backgroundColor: withAlpha(ACCENT, '10') }]} onPress={cycleFrom}>
+            <Text style={[s.unitPillText, { color: ACCENT }]}>{fromUnit.label}</Text>
+            <Ionicons name="chevron-down" size={14} color={ACCENT} />
+          </TouchableOpacity>
+          <TextInput
+            style={[s.valueInput, { color: colors.text }]}
+            value={value}
+            onChangeText={setValue}
+            keyboardType="numeric"
+            placeholder="0"
+            placeholderTextColor={colors.textMuted}
+            selectTextOnFocus
+          />
+          <Text style={[s.unitShort, { color: colors.textMuted }]}>{fromUnit.short}</Text>
         </View>
+
+        {/* SWAP */}
+        <View style={s.swapRow}>
+          <View style={[s.swapLine, { backgroundColor: colors.border }]} />
+          <TouchableOpacity style={[s.swapBtn, { backgroundColor: ACCENT }]} onPress={swap} activeOpacity={0.8}>
+            <Ionicons name="swap-vertical" size={20} color="#fff" />
+          </TouchableOpacity>
+          <View style={[s.swapLine, { backgroundColor: colors.border }]} />
+        </View>
+
+        {/* TO */}
+        <View style={s.unitSection}>
+          <TouchableOpacity style={[s.unitPill, { borderColor: colors.border, backgroundColor: colors.inputBg }]} onPress={cycleTo}>
+            <Text style={[s.unitPillText, { color: colors.text }]}>{toUnit.label}</Text>
+            <Ionicons name="chevron-down" size={14} color={colors.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={async () => {
+              if (result) {
+                await Clipboard.setStringAsync(`${result} ${toUnit.short}`);
+                haptics.success();
+              }
+            }}
+          >
+            <Text style={[s.resultText, { color: ACCENT }]} numberOfLines={1} adjustsFontSizeToFit>
+              {result || '—'}
+            </Text>
+          </TouchableOpacity>
+          <Text style={[s.unitShort, { color: colors.textMuted }]}>
+            {toUnit.short}
+            {result ? '  ·  tap to copy' : ''}
+          </Text>
+        </View>
+      </View>
+
+      {/* All conversions grid */}
+      {allConversions.length > 0 && (
+        <>
+          <Text style={[s.sectionLabel, { color: colors.textMuted }]}>
+            {value || '0'} {fromUnit.short} in all units
+          </Text>
+          <View style={s.convGrid}>
+            {allConversions.map(c => (
+              <View
+                key={c.label}
+                style={[
+                  s.convCell,
+                  {
+                    backgroundColor: c.isCurrent ? withAlpha(ACCENT, '10') : colors.card,
+                    borderColor: c.isCurrent ? withAlpha(ACCENT, '30') : colors.border,
+                  },
+                ]}
+              >
+                <Text style={[s.convValue, { color: c.isCurrent ? ACCENT : colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
+                  {c.value}
+                </Text>
+                <Text style={[s.convLabel, { color: colors.textMuted }]}>{c.short}</Text>
+              </View>
+            ))}
+          </View>
+        </>
       )}
+    </>
+  );
+
+  return (
+    <ScreenShell
+      title="Unit Converter"
+      accentColor={ACCENT}
+      rightAction={
+        <TouchableOpacity onPress={toggleView} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Ionicons
+            name={viewMode === 'modern' ? 'list-outline' : 'apps-outline'}
+            size={22}
+            color={ACCENT}
+          />
+        </TouchableOpacity>
+      }
+    >
+      {/* Category strip */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={s.catStrip}
+      >
+        {CATEGORIES.map((c, i) => {
+          const active = catIdx === i;
+          return (
+            <TouchableOpacity
+              key={c.name}
+              style={[s.catTab, {
+                backgroundColor: active ? ACCENT : colors.card,
+                borderColor: active ? ACCENT : colors.border,
+              }]}
+              onPress={() => selectCategory(i)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name={c.icon} size={14} color={active ? '#fff' : colors.textMuted} />
+              <Text style={[s.catTabText, { color: active ? '#fff' : colors.text }]}>{c.name}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {viewMode === 'modern' ? renderModernView() : renderSimpleView()}
     </ScreenShell>
   );
 }
 
 const createStyles = (c: ReturnType<typeof useAppTheme>['colors']) =>
   StyleSheet.create({
-    catTab: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: Radii.pill, borderWidth: 1.5, borderColor: c.border, backgroundColor: c.surface },
-    catTabText: { fontSize: 13, fontFamily: Fonts.medium },
-    card: { borderRadius: Radii.lg, borderWidth: 1, padding: Spacing.lg, marginBottom: Spacing.lg },
-    label: { fontSize: 12, fontFamily: Fonts.medium, color: c.textMuted, marginBottom: 5 },
-    input: { borderWidth: 1.5, borderRadius: Radii.md, padding: Spacing.md, fontSize: 16, fontFamily: Fonts.regular, marginBottom: Spacing.md },
-    convRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm, marginTop: Spacing.xs },
-    pickerBox: { borderWidth: 1.5, borderRadius: Radii.md, maxHeight: 180 },
-    pickerItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.md, paddingVertical: 9, borderRadius: Radii.sm },
-    pickerItemText: { fontSize: 13, fontFamily: Fonts.regular },
-    swapBtn: { width: 42, height: 42, borderRadius: Radii.pill, alignItems: 'center', justifyContent: 'center', marginTop: 22, alignSelf: 'flex-start' },
-    resultBox: { borderRadius: Radii.xl, borderWidth: 1.5, padding: Spacing.xl, alignItems: 'center' },
-    resultLabel: { fontSize: 12, fontFamily: Fonts.medium, marginBottom: 4 },
-    resultValue: { fontSize: 28, fontFamily: Fonts.bold },
-    hint: { fontSize: 13, fontFamily: Fonts.regular, marginTop: Spacing.sm },
+    // Category strip
+    catStrip: { gap: 7, marginBottom: Spacing.md },
+    catTab: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: Radii.pill,
+      borderWidth: 1,
+    },
+    catTabText: { fontSize: 12, fontFamily: Fonts.semibold },
+
+    // Converter card
+    converterCard: {
+      borderRadius: Radii.xl,
+      borderWidth: 1,
+      padding: Spacing.lg,
+      marginBottom: Spacing.md,
+    },
+    unitSection: { alignItems: 'center', gap: 6 },
+    unitPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 14,
+      paddingVertical: 6,
+      borderRadius: Radii.pill,
+      borderWidth: 1.5,
+    },
+    unitPillText: { fontFamily: Fonts.semibold, fontSize: 13 },
+    valueInput: {
+      fontSize: 36,
+      fontFamily: Fonts.bold,
+      textAlign: 'center',
+      width: '100%',
+      paddingVertical: 4,
+    },
+    resultText: {
+      fontSize: 36,
+      fontFamily: Fonts.bold,
+      textAlign: 'center',
+      paddingVertical: 4,
+    },
+    unitShort: { fontFamily: Fonts.medium, fontSize: 12 },
+
+    // Swap
+    swapRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginVertical: Spacing.sm,
+    },
+    swapLine: { flex: 1, height: 1 },
+    swapBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginHorizontal: Spacing.md,
+    },
+
+    // Section label
+    sectionLabel: {
+      fontFamily: Fonts.semibold,
+      fontSize: 11,
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+      marginBottom: Spacing.sm,
+    },
+
+    // ── Simple view ──
+    simpleCard: {
+      borderRadius: Radii.lg,
+      borderWidth: 1,
+      padding: Spacing.md,
+      marginBottom: Spacing.sm,
+    },
+    simpleLabel: {
+      fontFamily: Fonts.semibold,
+      fontSize: 11,
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+      marginBottom: 6,
+    },
+    simpleInput: {
+      borderWidth: 1.5,
+      borderRadius: Radii.md,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: 10,
+      fontSize: 18,
+      fontFamily: Fonts.bold,
+    },
+    unitChipRow: { gap: 6 },
+    unitChip: {
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      borderRadius: Radii.pill,
+      borderWidth: 1,
+    },
+    unitChipText: { fontFamily: Fonts.semibold, fontSize: 13 },
+    simpleResult: {
+      borderRadius: Radii.xl,
+      borderWidth: 1,
+      padding: Spacing.xl,
+      alignItems: 'center',
+      marginTop: Spacing.sm,
+    },
+    simpleResultLabel: { fontFamily: Fonts.medium, fontSize: 13, marginBottom: 4 },
+    simpleResultValue: { fontFamily: Fonts.bold, fontSize: 28 },
+
+    // All conversions grid
+    convGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: Spacing.sm,
+    },
+    convCell: {
+      flexGrow: 1,
+      flexBasis: '30%',
+      minWidth: 90,
+      padding: Spacing.md,
+      borderRadius: Radii.lg,
+      borderWidth: 1,
+      alignItems: 'center',
+      gap: 3,
+    },
+    convValue: { fontSize: 15, fontFamily: Fonts.bold },
+    convLabel: { fontSize: 11, fontFamily: Fonts.medium },
   });

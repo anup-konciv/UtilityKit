@@ -10,6 +10,7 @@ import {
   Alert,
   Dimensions,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
@@ -53,19 +54,77 @@ type Holiday = {
   type: 'national' | 'religious' | 'custom';
 };
 
-// ─── Built-in Holidays ───────────────────────────────────────────────────────
+// ─── Built-in Holidays (India fallback when API is unavailable) ──────────────
 
 const BUILTIN_HOLIDAYS: Holiday[] = [
-  { id: 'bi_makar',        name: 'Makar Sankranti',   day: 14, month: 1,  type: 'religious' },
+  { id: 'bi_newyear',      name: "New Year's Day",     day: 1,  month: 1,  type: 'national'  },
+  { id: 'bi_makar',        name: 'Makar Sankranti',    day: 14, month: 1,  type: 'religious' },
   { id: 'bi_republic',     name: 'Republic Day',       day: 26, month: 1,  type: 'national'  },
   { id: 'bi_holi',         name: 'Holi',               day: 4,  month: 3,  type: 'religious' },
   { id: 'bi_ambedkar',     name: 'Dr. Ambedkar Jayanti', day: 14, month: 4, type: 'national' },
   { id: 'bi_labour',       name: 'Labour Day',         day: 1,  month: 5,  type: 'national'  },
   { id: 'bi_independence', name: 'Independence Day',   day: 15, month: 8,  type: 'national'  },
   { id: 'bi_gandhi',       name: 'Gandhi Jayanti',     day: 2,  month: 10, type: 'national'  },
+  { id: 'bi_diwali',       name: 'Diwali',             day: 12, month: 11, type: 'religious' },
   { id: 'bi_children',     name: "Children's Day",     day: 14, month: 11, type: 'national'  },
   { id: 'bi_christmas',    name: 'Christmas',          day: 25, month: 12, type: 'religious' },
 ];
+
+// ─── Country list for the selector ───────────────────────────────────────────
+type CountryOption = { code: string; name: string; flag: string };
+
+const COUNTRIES: CountryOption[] = [
+  { code: 'IN', name: 'India',          flag: '🇮🇳' },
+  { code: 'US', name: 'United States',  flag: '🇺🇸' },
+  { code: 'GB', name: 'United Kingdom', flag: '🇬🇧' },
+  { code: 'CA', name: 'Canada',         flag: '🇨🇦' },
+  { code: 'AU', name: 'Australia',      flag: '🇦🇺' },
+  { code: 'DE', name: 'Germany',        flag: '🇩🇪' },
+  { code: 'FR', name: 'France',         flag: '🇫🇷' },
+  { code: 'JP', name: 'Japan',          flag: '🇯🇵' },
+  { code: 'SG', name: 'Singapore',      flag: '🇸🇬' },
+  { code: 'AE', name: 'UAE',            flag: '🇦🇪' },
+  { code: 'BR', name: 'Brazil',         flag: '🇧🇷' },
+  { code: 'ZA', name: 'South Africa',   flag: '🇿🇦' },
+  { code: 'NZ', name: 'New Zealand',    flag: '🇳🇿' },
+  { code: 'IT', name: 'Italy',          flag: '🇮🇹' },
+  { code: 'ES', name: 'Spain',          flag: '🇪🇸' },
+  { code: 'KR', name: 'South Korea',    flag: '🇰🇷' },
+  { code: 'MX', name: 'Mexico',         flag: '🇲🇽' },
+  { code: 'NG', name: 'Nigeria',        flag: '🇳🇬' },
+];
+
+const COUNTRY_PREF_KEY = 'uk_holiday_country';
+
+// ─── API fetch + cache ───────────────────────────────────────────────────────
+// Uses the free Nager.Date API: https://date.nager.at
+// Cached per country+year so we don't re-fetch on every month change.
+const apiCache = new Map<string, Holiday[]>();
+
+async function fetchPublicHolidays(countryCode: string, year: number): Promise<Holiday[]> {
+  const key = `${countryCode}:${year}`;
+  if (apiCache.has(key)) return apiCache.get(key)!;
+  try {
+    const res = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/${countryCode}`);
+    if (!res.ok) return [];
+    const data: { date: string; localName: string; name: string }[] = await res.json();
+    const holidays: Holiday[] = data.map((h, i) => {
+      const [, m, d] = h.date.split('-').map(Number);
+      return {
+        id: `api_${countryCode}_${year}_${i}`,
+        name: h.localName || h.name,
+        day: d,
+        month: m,
+        year,
+        type: 'national' as const,
+      };
+    });
+    apiCache.set(key, holidays);
+    return holidays;
+  } catch {
+    return [];
+  }
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -117,23 +176,54 @@ export default function HolidayCalendarScreen() {
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [customHolidays, setCustomHolidays] = useState<Holiday[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
+  const [countryCode, setCountryCode] = useState('IN');
+  const [apiHolidays, setApiHolidays] = useState<Holiday[]>([]);
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
+  const [loadingApi, setLoadingApi] = useState(false);
 
   // Modal form state
   const [formName, setFormName] = useState('');
   const [formDay, setFormDay] = useState('');
   const [formMonth, setFormMonth] = useState('');
   const [formYear, setFormYear] = useState('');
-  // Refs for auto-jumping Day → Month → Year inputs.
   const dayRef = useRef<TextInput>(null);
   const monthRef = useRef<TextInput>(null);
   const yearRef = useRef<TextInput>(null);
 
+  // Load persisted data
   useEffect(() => {
     loadJSON<Holiday[]>(KEYS.customHolidays, []).then(setCustomHolidays);
+    loadJSON<string>(COUNTRY_PREF_KEY, 'IN').then(setCountryCode);
   }, []);
 
+  // Fetch holidays from API whenever country or year changes
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingApi(true);
+    fetchPublicHolidays(countryCode, viewYear).then(holidays => {
+      if (!cancelled) {
+        setApiHolidays(holidays);
+        setLoadingApi(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [countryCode, viewYear]);
+
+  const selectCountry = useCallback((code: string) => {
+    setCountryCode(code);
+    saveJSON(COUNTRY_PREF_KEY, code);
+    setShowCountryPicker(false);
+    apiCache.delete(`${code}:${viewYear}`); // force re-fetch
+  }, [viewYear]);
+
+  const selectedCountry = COUNTRIES.find(c => c.code === countryCode) ?? COUNTRIES[0];
+
+  // Merge API holidays with built-in fallback + custom holidays.
+  // If the API returned data for this country, use it. Otherwise fall back
+  // to the hardcoded Indian holidays.
+  const builtInForMonth = apiHolidays.length > 0 ? apiHolidays : BUILTIN_HOLIDAYS;
   const monthHolidays = getHolidaysForMonth(
-    BUILTIN_HOLIDAYS,
+    builtInForMonth,
     customHolidays,
     viewMonth,
     viewYear,
@@ -221,20 +311,35 @@ export default function HolidayCalendarScreen() {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <ScreenShell title="Holiday Calendar" accentColor={ACCENT} scrollable={false}>
+    <ScreenShell
+      title="Holiday Calendar"
+      accentColor={ACCENT}
+      scrollable={false}
+      rightAction={
+        <TouchableOpacity onPress={() => setShowCountryPicker(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={{ fontSize: 22 }}>{selectedCountry.flag}</Text>
+        </TouchableOpacity>
+      }
+    >
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.bg }}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Month Navigator */}
+        {/* Country + Month Navigator */}
         <View style={[styles.navigator, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <TouchableOpacity onPress={prevMonth} style={styles.navBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="chevron-back" size={20} color={ACCENT} />
           </TouchableOpacity>
-          <Text style={[styles.monthTitle, { color: colors.text }]}>
-            {MONTH_NAMES[viewMonth - 1]} {viewYear}
-          </Text>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={[styles.monthTitle, { color: colors.text }]}>
+              {MONTH_NAMES[viewMonth - 1]} {viewYear}
+            </Text>
+            <Text style={{ fontSize: 11, fontFamily: Fonts.medium, color: colors.textMuted, marginTop: 1 }}>
+              {selectedCountry.flag} {selectedCountry.name}
+              {loadingApi ? ' · Loading…' : ''}
+            </Text>
+          </View>
           <TouchableOpacity onPress={nextMonth} style={styles.navBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="chevron-forward" size={20} color={ACCENT} />
           </TouchableOpacity>
@@ -260,15 +365,30 @@ export default function HolidayCalendarScreen() {
               const holidays = holidaysByDay[day] ?? [];
               const isSelected = selectedDay === day;
               const todayFlag = isToday(day);
-              const dotColors = holidays.map(h => TYPE_COLORS[h.type]);
+              const hasHoliday = holidays.length > 0;
+              const holidayColor = hasHoliday ? TYPE_COLORS[holidays[0].type] : null;
 
               return (
                 <TouchableOpacity
                   key={`day_${day}`}
                   style={[
                     styles.dayCell,
+                    styles.dayCellBox,
                     { width: CELL_WIDTH },
-                    isSelected && { backgroundColor: ACCENT + '22', borderRadius: Radii.sm },
+                    // Light background for every day; tinted for holidays
+                    {
+                      backgroundColor: isSelected
+                        ? ACCENT + '22'
+                        : hasHoliday
+                          ? (holidayColor ?? ACCENT) + '10'
+                          : colors.surface,
+                      borderColor: isSelected
+                        ? ACCENT + '55'
+                        : hasHoliday
+                          ? (holidayColor ?? ACCENT) + '30'
+                          : colors.border,
+                    },
+                    todayFlag && { borderColor: ACCENT, borderWidth: 1.5 },
                   ]}
                   onPress={() => setSelectedDay(isSelected ? null : day)}
                   activeOpacity={0.7}
@@ -276,17 +396,16 @@ export default function HolidayCalendarScreen() {
                   <Text
                     style={[
                       styles.dayNumber,
-                      { color: todayFlag ? ACCENT : colors.text },
-                      todayFlag && styles.todayNumber,
+                      { color: todayFlag ? ACCENT : hasHoliday ? (holidayColor ?? ACCENT) : colors.text },
+                      (todayFlag || hasHoliday) && styles.todayNumber,
                     ]}
                   >
                     {day}
                   </Text>
-                  {todayFlag && <View style={[styles.todayUnderline, { backgroundColor: ACCENT }]} />}
-                  {dotColors.length > 0 && (
+                  {hasHoliday && (
                     <View style={styles.dotRow}>
-                      {dotColors.slice(0, 3).map((c, i) => (
-                        <View key={i} style={[styles.dot, { backgroundColor: c }]} />
+                      {holidays.slice(0, 3).map((h, i) => (
+                        <View key={i} style={[styles.dot, { backgroundColor: TYPE_COLORS[h.type] }]} />
                       ))}
                     </View>
                   )}
@@ -374,7 +493,7 @@ export default function HolidayCalendarScreen() {
       </ScrollView>
 
       {/* Add Holiday Modal */}
-      <Modal
+      <KeyboardAwareModal
         visible={modalVisible}
         transparent
         animationType="slide"
@@ -467,7 +586,53 @@ export default function HolidayCalendarScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
+
+      {/* Country Picker Modal */}
+      <KeyboardAwareModal
+        visible={showCountryPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCountryPicker(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity activeOpacity={1} style={{ flex: 1 }} onPress={() => setShowCountryPicker(false)} />
+          <View style={[styles.modalSheet, { backgroundColor: colors.surface }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Select Country</Text>
+              <TouchableOpacity onPress={() => setShowCountryPicker(false)}>
+                <Ionicons name="close" size={22} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <Text style={{ fontSize: 12, fontFamily: Fonts.regular, color: colors.textMuted, marginBottom: Spacing.md }}>
+              Public holidays will be fetched for the selected country.
+            </Text>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 380 }}>
+              {COUNTRIES.map(c => {
+                const active = c.code === countryCode;
+                return (
+                  <TouchableOpacity
+                    key={c.code}
+                    style={[
+                      styles.countryRow,
+                      {
+                        backgroundColor: active ? ACCENT + '14' : 'transparent',
+                        borderColor: active ? ACCENT + '40' : colors.border,
+                      },
+                    ]}
+                    onPress={() => selectCountry(c.code)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={{ fontSize: 22 }}>{c.flag}</Text>
+                    <Text style={[styles.countryName, { color: colors.text }]}>{c.name}</Text>
+                    {active && <Ionicons name="checkmark-circle" size={20} color={ACCENT} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </KeyboardAwareModal>
     </ScreenShell>
   );
 }
@@ -525,6 +690,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingTop: 2,
+  },
+  dayCellBox: {
+    borderWidth: 0.5,
+    borderRadius: Radii.sm,
+    margin: 0.5,
   },
   weekdayLabel: {
     fontSize: 10,
@@ -733,5 +903,20 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontFamily: Fonts.bold,
+  },
+  // Country picker
+  countryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: Radii.md,
+    borderWidth: 1,
+    marginBottom: Spacing.xs,
+  },
+  countryName: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: Fonts.medium,
   },
 });

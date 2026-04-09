@@ -14,6 +14,7 @@
  */
 import { useMemo, useState, useCallback, useEffect } from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from './ThemeProvider';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
@@ -172,7 +173,7 @@ export default function DateField({
         <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
       </TouchableOpacity>
 
-      <Modal
+      <KeyboardAwareModal
         visible={open}
         transparent
         animationType="fade"
@@ -269,7 +270,7 @@ export default function DateField({
             </View>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
     </>
   );
 }

@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, Modal, FlatList, ActivityIndicator,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
@@ -67,7 +68,7 @@ function CurrencyPicker({
   }, [search, currencies]);
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <KeyboardAwareModal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={ps.backdrop}>
         <View style={[ps.sheet, { backgroundColor: colors.bg }]}>
           <View style={[ps.header, { borderBottomColor: colors.border }]}>
@@ -107,7 +108,7 @@ function CurrencyPicker({
           />
         </View>
       </View>
-    </Modal>
+      </KeyboardAwareModal>
   );
 }
 

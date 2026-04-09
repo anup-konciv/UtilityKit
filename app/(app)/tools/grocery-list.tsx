@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import ScreenShell from '@/components/ScreenShell';
@@ -576,7 +577,7 @@ export default function GroceryListScreen() {
   /* ── add modal ── */
 
   const addModal = (
-    <Modal visible={showAddModal} transparent animationType="slide" onRequestClose={() => setShowAddModal(false)}>
+    <KeyboardAwareModal visible={showAddModal} transparent animationType="slide" onRequestClose={() => setShowAddModal(false)}>
       <View style={styles.overlay}>
         <TouchableOpacity style={styles.overlayDismiss} activeOpacity={1} onPress={() => setShowAddModal(false)} />
         <View style={[styles.sheet, { backgroundColor: colors.surface }]}>
@@ -678,7 +679,7 @@ export default function GroceryListScreen() {
           </TouchableOpacity>
         </View>
       </View>
-    </Modal>
+      </KeyboardAwareModal>
   );
 
   /* ── FAB ── */

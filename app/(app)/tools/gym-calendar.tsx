@@ -8,8 +8,8 @@ import {
   Dimensions,
   Modal,
   TextInput,
-  Platform,
-} from 'react-native';
+  Platform,} from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
@@ -587,7 +587,7 @@ export default function GymCalendarScreen() {
       </ScrollView>
 
       {/* ───── Workout Detail Modal ───── */}
-      <Modal visible={showWorkout} transparent animationType="slide" onRequestClose={() => setShowWorkout(false)}>
+      <KeyboardAwareModal visible={showWorkout} transparent animationType="slide" onRequestClose={() => setShowWorkout(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
             <View style={styles.modalHeader}>
@@ -720,7 +720,7 @@ export default function GymCalendarScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
     </ScreenShell>
   );
 }

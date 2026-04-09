@@ -12,8 +12,8 @@ import {
   Platform,
   Image,
   Dimensions,
-  ActivityIndicator,
-} from 'react-native';
+  ActivityIndicator,} from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -513,7 +513,7 @@ export default function DocVaultFolderScreen() {
     const imgWidth = SCREEN_WIDTH - Spacing.xl * 2;
 
     return (
-      <Modal visible animationType="fade" transparent onRequestClose={() => setPreviewFile(null)}>
+      <KeyboardAwareModal visible animationType="fade" transparent onRequestClose={() => setPreviewFile(null)}>
         <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
           <View style={[styles.previewModal, { backgroundColor: colors.surface }]}>
             {/* Close button */}
@@ -592,7 +592,7 @@ export default function DocVaultFolderScreen() {
             </ScrollView>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
     );
   };
 
@@ -603,7 +603,7 @@ export default function DocVaultFolderScreen() {
     // Rename sub-view
     if (showRename) {
       return (
-        <Modal visible animationType="slide" transparent onRequestClose={() => setShowRename(false)}>
+        <KeyboardAwareModal visible animationType="slide" transparent onRequestClose={() => setShowRename(false)}>
           <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
             <View style={[styles.bottomSheet, { backgroundColor: colors.surface }]}>
               <View style={styles.sheetHandle} />
@@ -642,7 +642,7 @@ export default function DocVaultFolderScreen() {
               </View>
             </View>
           </View>
-        </Modal>
+      </KeyboardAwareModal>
       );
     }
 
@@ -650,7 +650,7 @@ export default function DocVaultFolderScreen() {
     if (showMovePicker) {
       const otherFolders = folders.filter(f => f.id !== id);
       return (
-        <Modal visible animationType="slide" transparent onRequestClose={() => setShowMovePicker(false)}>
+        <KeyboardAwareModal visible animationType="slide" transparent onRequestClose={() => setShowMovePicker(false)}>
           <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
             <View style={[styles.bottomSheet, { backgroundColor: colors.surface, maxHeight: '70%' }]}>
               <View style={styles.sheetHandle} />
@@ -690,14 +690,14 @@ export default function DocVaultFolderScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </Modal>
+      </KeyboardAwareModal>
       );
     }
 
     // Uploading overlay
     if (uploading) {
       return (
-        <Modal visible animationType="fade" transparent onRequestClose={() => {}}>
+        <KeyboardAwareModal visible animationType="fade" transparent onRequestClose={() => {}}>
           <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
             <View style={[styles.uploadingBox, { backgroundColor: colors.surface }]}>
               <ActivityIndicator size="large" color={ACCENT} />
@@ -706,7 +706,7 @@ export default function DocVaultFolderScreen() {
               </Text>
             </View>
           </View>
-        </Modal>
+      </KeyboardAwareModal>
       );
     }
 
@@ -750,7 +750,7 @@ export default function DocVaultFolderScreen() {
     ];
 
     return (
-      <Modal visible animationType="slide" transparent onRequestClose={() => setActionFile(null)}>
+      <KeyboardAwareModal visible animationType="slide" transparent onRequestClose={() => setActionFile(null)}>
         <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
           <View style={[styles.bottomSheet, { backgroundColor: colors.surface }]}>
             <View style={styles.sheetHandle} />
@@ -777,13 +777,13 @@ export default function DocVaultFolderScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
     );
   };
 
   /* ── Add file bottom sheet ── */
   const renderAddSheet = () => (
-    <Modal visible={showAddSheet} animationType="slide" transparent onRequestClose={() => setShowAddSheet(false)}>
+    <KeyboardAwareModal visible={showAddSheet} animationType="slide" transparent onRequestClose={() => setShowAddSheet(false)}>
       <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
         <View style={[styles.bottomSheet, { backgroundColor: colors.surface }]}>
           <View style={styles.sheetHandle} />
@@ -831,7 +831,7 @@ export default function DocVaultFolderScreen() {
           </TouchableOpacity>
         </View>
       </View>
-    </Modal>
+      </KeyboardAwareModal>
   );
 
   /* ── Header info ── */

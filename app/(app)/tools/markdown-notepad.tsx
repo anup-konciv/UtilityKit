@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { KEYS, loadJSON, saveJSON } from '@/lib/storage';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
@@ -218,6 +219,22 @@ function newFile(name = 'Untitled', content?: string): MdFile {
 // ── Editor view ───────────────────────────────────────────────────────────────
 type Colors = ReturnType<typeof useAppTheme>['colors'];
 
+// ── Markdown cheat sheet data ─────────────────────────────────────────────────
+const MD_CHEATSHEET: { title: string; syntax: string; rendered: string }[] = [
+  { title: 'Heading 1',      syntax: '# Heading',           rendered: 'Large title' },
+  { title: 'Heading 2',      syntax: '## Heading',          rendered: 'Medium title' },
+  { title: 'Heading 3',      syntax: '### Heading',         rendered: 'Small title' },
+  { title: 'Bold',           syntax: '**bold text**',       rendered: 'bold text' },
+  { title: 'Italic',         syntax: '*italic text*',       rendered: 'italic text' },
+  { title: 'Inline code',    syntax: '`code`',              rendered: 'code' },
+  { title: 'Link',           syntax: '[title](url)',        rendered: 'title (clickable)' },
+  { title: 'Bullet list',    syntax: '- item',              rendered: '• item' },
+  { title: 'Blockquote',     syntax: '> quote text',        rendered: '│ quote text' },
+  { title: 'Code block',     syntax: '```\ncode\n```',      rendered: 'code block' },
+  { title: 'Horizontal rule',syntax: '---',                 rendered: '────────' },
+  { title: 'Line break',     syntax: '(empty line)',        rendered: 'New paragraph' },
+];
+
 function Editor({
   file,
   colors,
@@ -234,6 +251,7 @@ function Editor({
   const [content, setContent] = useState(file.content);
   const [tab, setTab]         = useState<TabMode>('edit');
   const [editName, setEditName] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nodes = useMemo(() => parseMarkdown(content), [content]);
 
@@ -330,6 +348,9 @@ function Editor({
           </TouchableOpacity>
         )}
 
+        <TouchableOpacity onPress={() => setShowHelp(true)} style={[s.iconBtn, { backgroundColor: colors.bg, borderColor: colors.border }]}>
+          <Ionicons name="help-circle-outline" size={20} color="#64748B" />
+        </TouchableOpacity>
         <TouchableOpacity onPress={confirmDelete} style={[s.iconBtn, { backgroundColor: colors.bg, borderColor: colors.border }]}>
           <Ionicons name="trash-outline" size={18} color={colors.error} />
         </TouchableOpacity>
@@ -395,6 +416,49 @@ function Editor({
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* ── Markdown Cheat Sheet Modal ── */}
+      <KeyboardAwareModal visible={showHelp} transparent animationType="slide" onRequestClose={() => setShowHelp(false)}>
+        <View style={s.helpOverlay}>
+          <TouchableOpacity activeOpacity={1} style={{ flex: 1 }} onPress={() => setShowHelp(false)} />
+          <View style={[s.helpSheet, { backgroundColor: colors.surface }]}>
+            <View style={[s.helpHandle, { backgroundColor: colors.border }]} />
+            <View style={s.helpHeader}>
+              <Text style={[s.helpTitle, { color: colors.text }]}>Markdown Cheat Sheet</Text>
+              <TouchableOpacity onPress={() => setShowHelp(false)}>
+                <Ionicons name="close" size={22} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <Text style={[s.helpSub, { color: colors.textMuted }]}>
+              Tap any row to insert it into your note.
+            </Text>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
+              {MD_CHEATSHEET.map((item, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={[s.helpRow, { borderBottomColor: colors.border }]}
+                  onPress={() => {
+                    // Insert the syntax at the end of the current content
+                    const insert = item.syntax.includes('\n') ? `\n${item.syntax}\n` : `\n${item.syntax}`;
+                    handleContent(content + insert);
+                    setShowHelp(false);
+                    setTab('edit');
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.helpRowTitle, { color: colors.text }]}>{item.title}</Text>
+                    <Text style={[s.helpRowSyntax, { color: colors.accent, backgroundColor: colors.glass }]}>
+                      {item.syntax}
+                    </Text>
+                  </View>
+                  <Text style={[s.helpRowRendered, { color: colors.textMuted }]}>{item.rendered}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </KeyboardAwareModal>
     </SafeAreaView>
   );
 }
@@ -427,6 +491,17 @@ const editorStyles = (c: Colors) => StyleSheet.create({
   footerActions:    { flexDirection: 'row', gap: 6 },
   footerBtn:        { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radii.pill, borderWidth: 1 },
   footerBtnText:    { fontSize: 11, fontFamily: Fonts.medium },
+  // Help modal
+  helpOverlay:      { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
+  helpSheet:        { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: Spacing.lg, paddingBottom: 36 },
+  helpHandle:       { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: Spacing.md, marginBottom: Spacing.md },
+  helpHeader:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  helpTitle:        { fontSize: 18, fontFamily: Fonts.bold },
+  helpSub:          { fontSize: 12, fontFamily: Fonts.regular, marginBottom: Spacing.md },
+  helpRow:          { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.md, borderBottomWidth: StyleSheet.hairlineWidth },
+  helpRowTitle:     { fontSize: 13, fontFamily: Fonts.semibold, marginBottom: 3 },
+  helpRowSyntax:    { fontSize: 12, fontFamily: 'monospace', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, alignSelf: 'flex-start', overflow: 'hidden' },
+  helpRowRendered:  { fontSize: 12, fontFamily: Fonts.medium, maxWidth: 100, textAlign: 'right' },
 });
 
 // ── File list screen ──────────────────────────────────────────────────────────

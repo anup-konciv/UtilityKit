@@ -10,6 +10,7 @@ import {
   Modal,
   ScrollView,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
@@ -514,7 +515,7 @@ export default function HabitTrackerScreen() {
 
   // ── Add/Edit Modal ─────────────────────────────────────────────────────────
   const renderModal = () => (
-    <Modal visible={showAdd} transparent animationType="fade" onRequestClose={closeModal}>
+    <KeyboardAwareModal visible={showAdd} transparent animationType="fade" onRequestClose={closeModal}>
       <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={closeModal}>
         <TouchableOpacity activeOpacity={1} style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.modalTitle, { color: colors.text }]}>
@@ -612,7 +613,7 @@ export default function HabitTrackerScreen() {
           </View>
         </TouchableOpacity>
       </TouchableOpacity>
-    </Modal>
+      </KeyboardAwareModal>
   );
 
   // ── Day Detail Modal (month view tap) ─────────────────────────────────────
@@ -623,7 +624,7 @@ export default function HabitTrackerScreen() {
     const [y, m, d] = dayDetail.split('-').map(Number);
     const label = new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
     return (
-      <Modal visible={!!dayDetail} transparent animationType="fade" onRequestClose={() => setDayDetail(null)}>
+      <KeyboardAwareModal visible={!!dayDetail} transparent animationType="fade" onRequestClose={() => setDayDetail(null)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setDayDetail(null)}>
           <TouchableOpacity activeOpacity={1} style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>{label}</Text>
@@ -650,7 +651,7 @@ export default function HabitTrackerScreen() {
             </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>
-      </Modal>
+      </KeyboardAwareModal>
     );
   };
 

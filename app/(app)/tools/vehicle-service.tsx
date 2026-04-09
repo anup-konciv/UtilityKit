@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Alert,
-  FlatList, ScrollView, Platform,
-} from 'react-native';
+  FlatList, ScrollView, Platform,} from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import DateField from '@/components/DateField';
@@ -447,7 +447,7 @@ export default function VehicleServiceScreen() {
 
   /* ───── Render: Add modal ───── */
   const renderAddModal = () => (
-    <Modal visible={showAdd} transparent animationType="slide" onRequestClose={() => setShowAdd(false)}>
+    <KeyboardAwareModal visible={showAdd} transparent animationType="slide" onRequestClose={() => setShowAdd(false)}>
       <View style={styles.modalOverlay}>
         <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
           <View style={styles.modalHeader}>
@@ -540,7 +540,7 @@ export default function VehicleServiceScreen() {
           </TouchableOpacity>
         </View>
       </View>
-    </Modal>
+      </KeyboardAwareModal>
   );
 
   /* ───── Render: Detail modal ───── */
@@ -554,7 +554,7 @@ export default function VehicleServiceScreen() {
     const nextISO = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')}`;
 
     return (
-      <Modal visible={!!showDetail} transparent animationType="slide" onRequestClose={() => setShowDetail(null)}>
+      <KeyboardAwareModal visible={!!showDetail} transparent animationType="slide" onRequestClose={() => setShowDetail(null)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.surface, maxHeight: '88%' }]}>
             <View style={styles.modalHeader}>
@@ -725,13 +725,13 @@ export default function VehicleServiceScreen() {
             </ScrollView>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
     );
   };
 
   /* ───── Render: Log service modal ───── */
   const renderLogModal = () => (
-    <Modal visible={showLogService} transparent animationType="slide" onRequestClose={() => setShowLogService(false)}>
+    <KeyboardAwareModal visible={showLogService} transparent animationType="slide" onRequestClose={() => setShowLogService(false)}>
       <View style={styles.modalOverlay}>
         <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
           <View style={styles.modalHeader}>
@@ -814,7 +814,7 @@ export default function VehicleServiceScreen() {
           </TouchableOpacity>
         </View>
       </View>
-    </Modal>
+      </KeyboardAwareModal>
   );
 
   /* ───── Main render ───── */

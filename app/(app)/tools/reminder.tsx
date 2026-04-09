@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity,
   ScrollView, StyleSheet, Modal, Alert, Dimensions,
 } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
@@ -186,7 +187,7 @@ function DateTimeModal({ value, onConfirm, onClose, colors }: {
   };
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+    <KeyboardAwareModal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={dt.overlay}>
         <TouchableOpacity style={dt.dismiss} activeOpacity={1} onPress={onClose} />
         <View style={[dt.sheet, { backgroundColor: colors.surface }]}>
@@ -216,7 +217,7 @@ function DateTimeModal({ value, onConfirm, onClose, colors }: {
           </TouchableOpacity>
         </View>
       </View>
-    </Modal>
+      </KeyboardAwareModal>
   );
 }
 const dt = StyleSheet.create({
@@ -262,7 +263,7 @@ function AddReminderSheet({ initial, onSave, onDelete, onClose, colors }: {
   const s = useMemo(() => ss(colors), [colors]);
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+    <KeyboardAwareModal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={s.overlay}>
         <TouchableOpacity style={s.dismiss} activeOpacity={1} onPress={onClose} />
         <ScrollView style={[s.sheet, { backgroundColor: colors.surface }]} keyboardShouldPersistTaps="handled" bounces={false}>
@@ -368,7 +369,7 @@ function AddReminderSheet({ initial, onSave, onDelete, onClose, colors }: {
           colors={colors}
         />
       )}
-    </Modal>
+      </KeyboardAwareModal>
   );
 }
 

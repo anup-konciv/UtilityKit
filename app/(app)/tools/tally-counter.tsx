@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, TextInput, Modal, Alert } from 'react-native';
+import KeyboardAwareModal from '@/components/KeyboardAwareModal';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenShell from '@/components/ScreenShell';
 import { useAppTheme } from '@/components/ThemeProvider';
@@ -181,7 +182,7 @@ export default function TallyCounterScreen() {
       })}
 
       {/* Add/Edit Modal */}
-      <Modal visible={showAdd} transparent animationType="fade" onRequestClose={() => { setShowAdd(false); setEditing(null); }}>
+      <KeyboardAwareModal visible={showAdd} transparent animationType="fade" onRequestClose={() => { setShowAdd(false); setEditing(null); }}>
         <View style={styles.modalBg}>
           <View style={[styles.modalCard, { backgroundColor: colors.bg }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>{editing ? 'Edit Counter' : 'New Counter'}</Text>
@@ -237,7 +238,7 @@ export default function TallyCounterScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+      </KeyboardAwareModal>
     </ScreenShell>
   );
 }
