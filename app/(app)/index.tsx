@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,46 +6,69 @@ import {
   TouchableOpacity,
   StyleSheet,
   TextInput,
-  ScrollView,
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '@/components/ThemeProvider';
 import { TOOLS, type ToolMeta } from '@/constants/tools-meta';
 import { Fonts, Radii, Spacing } from '@/constants/theme';
 import { loadJSON, saveJSON, KEYS } from '@/lib/storage';
+import {
+  DEFAULT_FOLDERS,
+  VIRTUAL_FOLDER_IDS,
+  loadFolders,
+  resolveFolderTools,
+  type Folder,
+} from '@/lib/folders';
 
 const CARD_GAP = 12;
 
-// ── Grid Card ──────────────────────────────────────────────────────────────────
-function GridCard({ item, colors, isFav, onToggleFav }: { item: ToolMeta; colors: ReturnType<typeof useAppTheme>['colors']; isFav: boolean; onToggleFav: () => void }) {
-  const styles = useMemo(() => gridCardStyles(colors), [colors]);
+type HomeTile =
+  | { kind: 'folder'; folder: Folder; count: number; preview: ToolMeta[] }
+  | { kind: 'all'; count: number };
+
+// ── Folder Tile ────────────────────────────────────────────────────────────────
+function FolderTile({
+  folder,
+  count,
+  preview,
+  colors,
+  onPress,
+}: {
+  folder: Folder;
+  count: number;
+  preview: ToolMeta[];
+  colors: ReturnType<typeof useAppTheme>['colors'];
+  onPress: () => void;
+}) {
+  const styles = useMemo(() => folderTileStyles(colors), [colors]);
   return (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => router.push(item.route as any)}
-      activeOpacity={0.82}
-    >
-      <View style={[styles.iconWrap, { backgroundColor: item.accent + '15' }]}>
-        <Ionicons name={item.icon as any} size={24} color={item.accent} />
+    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.82}>
+      <View style={[styles.iconWrap, { backgroundColor: folder.accent + '18' }]}>
+        <Ionicons name={folder.icon as any} size={28} color={folder.accent} />
       </View>
-      <View style={styles.topRight}>
-        <TouchableOpacity onPress={onToggleFav} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name={isFav ? 'star' : 'star-outline'} size={16} color={isFav ? '#F59E0B' : colors.textMuted} />
-        </TouchableOpacity>
-        <View style={[styles.badge, { backgroundColor: item.accent + '14' }]}>
-          <Text style={[styles.badgeText, { color: item.accent }]}>{item.badge}</Text>
+      <Text style={styles.name} numberOfLines={1}>{folder.name}</Text>
+      <Text style={styles.count}>{count} {count === 1 ? 'tool' : 'tools'}</Text>
+      {preview.length > 0 && (
+        <View style={styles.preview}>
+          {preview.slice(0, 4).map(t => (
+            <View
+              key={t.id}
+              style={[styles.previewDot, { backgroundColor: t.accent + '22', borderColor: t.accent + '44' }]}
+            >
+              <Ionicons name={t.icon as any} size={12} color={t.accent} />
+            </View>
+          ))}
+          {count > 4 && <Text style={styles.previewMore}>+{count - 4}</Text>}
         </View>
-      </View>
-      <Text style={styles.label}>{item.label}</Text>
-      <Text style={styles.desc} numberOfLines={2}>{item.description}</Text>
+      )}
     </TouchableOpacity>
   );
 }
 
-const gridCardStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
+const folderTileStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
   StyleSheet.create({
     card: {
       flex: 1,
@@ -54,42 +77,61 @@ const gridCardStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       padding: Spacing.md,
       borderWidth: 1,
       borderColor: colors.border,
-      minHeight: 120,
+      minHeight: 140,
       elevation: 2,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 1 },
       shadowOpacity: 0.06,
       shadowRadius: 4,
+      justifyContent: 'space-between',
     },
     iconWrap: {
-      width: 44,
-      height: 44,
-      borderRadius: 14,
+      width: 52,
+      height: 52,
+      borderRadius: 16,
       alignItems: 'center',
       justifyContent: 'center',
       marginBottom: Spacing.sm,
     },
-    topRight: {
-      position: 'absolute',
-      top: Spacing.sm,
-      right: Spacing.sm,
-      flexDirection: 'row',
+    name: { fontSize: 15, fontFamily: Fonts.semibold, color: colors.text, marginBottom: 2 },
+    count: {
+      fontSize: 11,
+      fontFamily: Fonts.semibold,
+      color: colors.textMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+      marginBottom: Spacing.sm,
+    },
+    preview: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    previewDot: {
+      width: 22,
+      height: 22,
+      borderRadius: 7,
+      borderWidth: 1,
       alignItems: 'center',
-      gap: 6,
+      justifyContent: 'center',
     },
-    badge: {
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      borderRadius: Radii.pill,
+    previewMore: {
+      fontSize: 10,
+      fontFamily: Fonts.semibold,
+      color: colors.textMuted,
+      marginLeft: 2,
     },
-    badgeText: { fontSize: 9, fontFamily: Fonts.bold, textTransform: 'uppercase', letterSpacing: 0.5 },
-    label: { fontSize: 14, fontFamily: Fonts.semibold, color: colors.text, marginBottom: 3 },
-    desc: { fontSize: 11, fontFamily: Fonts.regular, color: colors.textMuted, lineHeight: 16 },
   });
 
-// ── List Card ──────────────────────────────────────────────────────────────────
-function ListCard({ item, colors, isFav, onToggleFav }: { item: ToolMeta; colors: ReturnType<typeof useAppTheme>['colors']; isFav: boolean; onToggleFav: () => void }) {
-  const styles = useMemo(() => listCardStyles(colors), [colors]);
+// ── Search Result Card ─────────────────────────────────────────────────────────
+function ResultCard({
+  item,
+  colors,
+  isFav,
+  onToggleFav,
+}: {
+  item: ToolMeta;
+  colors: ReturnType<typeof useAppTheme>['colors'];
+  isFav: boolean;
+  onToggleFav: () => void;
+}) {
+  const styles = useMemo(() => resultStyles(colors), [colors]);
   return (
     <TouchableOpacity
       style={styles.card}
@@ -100,136 +142,43 @@ function ListCard({ item, colors, isFav, onToggleFav }: { item: ToolMeta; colors
         <Ionicons name={item.icon as any} size={22} color={item.accent} />
       </View>
       <View style={styles.info}>
-        <Text style={styles.label}>{item.label}</Text>
+        <Text style={styles.label} numberOfLines={1}>{item.label}</Text>
         <Text style={styles.desc} numberOfLines={1}>{item.description}</Text>
       </View>
-      <TouchableOpacity onPress={onToggleFav} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ marginRight: 4 }}>
-        <Ionicons name={isFav ? 'star' : 'star-outline'} size={16} color={isFav ? '#F59E0B' : colors.textMuted} />
+      <TouchableOpacity onPress={onToggleFav} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <Ionicons
+          name={isFav ? 'star' : 'star-outline'}
+          size={16}
+          color={isFav ? '#F59E0B' : colors.textMuted}
+        />
       </TouchableOpacity>
-      <View style={[styles.badge, { backgroundColor: item.accent + '14' }]}>
-        <Text style={[styles.badgeText, { color: item.accent }]}>{item.badge}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={16} color={colors.textMuted} style={{ marginLeft: 6 }} />
+      <Ionicons name="chevron-forward" size={16} color={colors.textMuted} style={{ marginLeft: 8 }} />
     </TouchableOpacity>
   );
 }
 
-const listCardStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
+const resultStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
   StyleSheet.create({
     card: {
       flexDirection: 'row',
       alignItems: 'center',
+      gap: Spacing.md,
       backgroundColor: colors.card,
       borderRadius: Radii.lg,
       padding: Spacing.md,
       borderWidth: 1,
       borderColor: colors.border,
-      elevation: 2,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.06,
-      shadowRadius: 4,
     },
     iconWrap: {
-      width: 42,
-      height: 42,
-      borderRadius: 14,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: Spacing.md,
-    },
-    info: { flex: 1 },
-    badge: {
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      borderRadius: Radii.pill,
-      marginRight: 2,
-    },
-    badgeText: { fontSize: 9, fontFamily: Fonts.bold, textTransform: 'uppercase', letterSpacing: 0.5 },
-    label: { fontSize: 14, fontFamily: Fonts.semibold, color: colors.text, marginBottom: 2 },
-    desc: { fontSize: 11, fontFamily: Fonts.regular, color: colors.textMuted },
-  });
-
-// ── Edit Card ──────────────────────────────────────────────────────────────────
-function EditCard({
-  item,
-  colors,
-  index,
-  total,
-  onMove,
-}: {
-  item: ToolMeta;
-  colors: ReturnType<typeof useAppTheme>['colors'];
-  index: number;
-  total: number;
-  onMove: (from: number, to: number) => void;
-}) {
-  const styles = useMemo(() => editCardStyles(colors), [colors]);
-  return (
-    <View style={styles.card}>
-      <Ionicons name="reorder-three-outline" size={22} color={colors.textMuted} style={{ marginRight: 10 }} />
-      <View style={[styles.iconWrap, { backgroundColor: item.accent + '15' }]}>
-        <Ionicons name={item.icon as any} size={20} color={item.accent} />
-      </View>
-      <Text style={styles.label} numberOfLines={1}>{item.label}</Text>
-      <View style={styles.arrows}>
-        <TouchableOpacity
-          onPress={() => onMove(index, index - 1)}
-          style={[styles.arrowBtn, index === 0 && styles.arrowDisabled]}
-          disabled={index === 0}
-        >
-          <Ionicons name="chevron-up" size={18} color={index === 0 ? colors.border : colors.text} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => onMove(index, index + 1)}
-          style={[styles.arrowBtn, index === total - 1 && styles.arrowDisabled]}
-          disabled={index === total - 1}
-        >
-          <Ionicons name="chevron-down" size={18} color={index === total - 1 ? colors.border : colors.text} />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
-
-const editCardStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
-  StyleSheet.create({
-    card: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: colors.card,
-      borderRadius: Radii.lg,
-      paddingHorizontal: Spacing.md,
-      paddingVertical: 12,
-      borderWidth: 1,
-      borderColor: colors.border,
-      elevation: 2,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.06,
-      shadowRadius: 4,
-    },
-    iconWrap: {
-      width: 38,
-      height: 38,
+      width: 40,
+      height: 40,
       borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
-      marginRight: Spacing.sm,
     },
-    label: { flex: 1, fontSize: 14, fontFamily: Fonts.semibold, color: colors.text },
-    arrows: { flexDirection: 'row', gap: 4 },
-    arrowBtn: {
-      width: 32,
-      height: 32,
-      borderRadius: Radii.sm,
-      backgroundColor: colors.surface,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    arrowDisabled: { opacity: 0.35 },
+    info: { flex: 1 },
+    label: { fontSize: 14, fontFamily: Fonts.semibold, color: colors.text, marginBottom: 2 },
+    desc: { fontSize: 11, fontFamily: Fonts.regular, color: colors.textMuted },
   });
 
 // ── Home Screen ────────────────────────────────────────────────────────────────
@@ -239,22 +188,15 @@ export default function HomeScreen() {
   const { width } = useWindowDimensions();
 
   const [query, setQuery] = useState('');
-  const [badge, setBadge] = useState('All');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [order, setOrder] = useState<string[]>(() => TOOLS.map(t => t.id));
-  const [editMode, setEditMode] = useState(false);
+  const [folders, setFolders] = useState<Folder[]>(DEFAULT_FOLDERS);
   const [favorites, setFavorites] = useState<string[]>([]);
 
-  // Load saved order and favorites
-  useEffect(() => {
-    loadJSON<string[]>(KEYS.toolOrder, []).then(saved => {
-      if (!saved.length) return;
-      const valid = saved.filter(id => TOOLS.some(t => t.id === id));
-      const missing = TOOLS.map(t => t.id).filter(id => !valid.includes(id));
-      setOrder([...valid, ...missing]);
-    });
-    loadJSON<string[]>(KEYS.favorites, []).then(setFavorites);
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadFolders().then(setFolders);
+      loadJSON<string[]>(KEYS.favorites, []).then(setFavorites);
+    }, []),
+  );
 
   const toggleFavorite = useCallback((id: string) => {
     setFavorites(prev => {
@@ -264,80 +206,101 @@ export default function HomeScreen() {
     });
   }, []);
 
-  const orderedTools = useMemo(
-    () => order.map(id => TOOLS.find(t => t.id === id)).filter(Boolean) as ToolMeta[],
-    [order],
-  );
-
-  const displayTools = useMemo(() => {
-    let list = orderedTools;
-    if (badge === 'Favorites') list = list.filter(t => favorites.includes(t.id));
-    else if (badge !== 'All') list = list.filter(t => t.badge === badge);
-    if (query.trim()) {
-      const q = query.toLowerCase();
-      list = list.filter(
-        t =>
-          t.label.toLowerCase().includes(q) ||
-          t.description.toLowerCase().includes(q) ||
-          t.badge.toLowerCase().includes(q),
-      );
+  const tiles = useMemo<HomeTile[]>(() => {
+    const out: HomeTile[] = [];
+    if (favorites.length > 0) {
+      const favFolder: Folder = {
+        id: VIRTUAL_FOLDER_IDS.favorites,
+        name: 'Favorites',
+        icon: 'star',
+        accent: '#F59E0B',
+        toolIds: favorites,
+      };
+      out.push({
+        kind: 'folder',
+        folder: favFolder,
+        count: favorites.length,
+        preview: resolveFolderTools(favFolder, favorites),
+      });
     }
-    return list;
-  }, [orderedTools, badge, query, favorites]);
-
-  const badgeList = useMemo(() => {
-    const base = ['All', ...Array.from(new Set(TOOLS.map(t => t.badge)))];
-    if (favorites.length > 0) base.splice(1, 0, 'Favorites');
-    return base;
-  }, [favorites.length]);
-
-  const moveItem = useCallback((from: number, to: number) => {
-    setOrder(prev => {
-      const next = [...prev];
-      const [moved] = next.splice(from, 1);
-      next.splice(to, 0, moved);
-      saveJSON(KEYS.toolOrder, next);
-      return next;
+    folders.forEach(f => {
+      out.push({
+        kind: 'folder',
+        folder: f,
+        count: f.toolIds.length,
+        preview: resolveFolderTools(f, favorites),
+      });
     });
-  }, []);
+    out.push({ kind: 'all', count: TOOLS.length });
+    return out;
+  }, [folders, favorites]);
 
-  const isGrid = viewMode === 'grid' && !editMode;
-  
+  const searchResults = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [] as ToolMeta[];
+    return TOOLS.filter(
+      t =>
+        t.label.toLowerCase().includes(q) ||
+        t.description.toLowerCase().includes(q) ||
+        t.badge.toLowerCase().includes(q),
+    );
+  }, [query]);
+
   const numColumns = useMemo(() => {
-    if (!isGrid) return 1;
     if (width >= 1024) return 4;
     if (width >= 768) return 3;
     return 2;
-  }, [isGrid, width]);
+  }, [width]);
 
-  const listKey = `${viewMode}-${editMode ? 'edit' : 'view'}-${numColumns}`;
+  const isSearching = query.trim().length > 0;
 
-  const renderItem = useCallback(
-    ({ item, index }: { item: ToolMeta; index: number }) => {
-      if (editMode) {
+  const renderTile = useCallback(
+    ({ item }: { item: HomeTile }) => {
+      if (item.kind === 'all') {
+        const allFolder: Folder = {
+          id: VIRTUAL_FOLDER_IDS.all,
+          name: 'All Tools',
+          icon: 'apps-outline',
+          accent: colors.accent,
+          toolIds: [],
+        };
         return (
-          <EditCard
-            item={item}
+          <FolderTile
+            folder={allFolder}
+            count={item.count}
+            preview={TOOLS.slice(0, 4)}
             colors={colors}
-            index={index}
-            total={orderedTools.length}
-            onMove={moveItem}
+            onPress={() => router.push('/all-tools' as any)}
           />
         );
       }
-      if (isGrid) return <GridCard item={item} colors={colors} isFav={favorites.includes(item.id)} onToggleFav={() => toggleFavorite(item.id)} />;
-      return <ListCard item={item} colors={colors} isFav={favorites.includes(item.id)} onToggleFav={() => toggleFavorite(item.id)} />;
+      return (
+        <FolderTile
+          folder={item.folder}
+          count={item.count}
+          preview={item.preview}
+          colors={colors}
+          onPress={() => router.push(`/folders/${item.folder.id}` as any)}
+        />
+      );
     },
-    [editMode, isGrid, colors, orderedTools.length, moveItem, favorites, toggleFavorite],
+    [colors],
   );
 
-  const subLabel = editMode
-    ? 'USE ↑↓ TO REORDER • TAP ✓ WHEN DONE'
-    : `${displayTools.length} ${displayTools.length === 1 ? 'utility' : 'utilities'}${badge !== 'All' ? ` · ${badge}` : ''}${query ? ` · "${query}"` : ''}`;
+  const renderResult = useCallback(
+    ({ item }: { item: ToolMeta }) => (
+      <ResultCard
+        item={item}
+        colors={colors}
+        isFav={favorites.includes(item.id)}
+        onToggleFav={() => toggleFavorite(item.id)}
+      />
+    ),
+    [colors, favorites, toggleFavorite],
+  );
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={['top']}>
-      {/* Header */}
       <View style={styles.headerWrapper}>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
@@ -349,106 +312,83 @@ export default function HomeScreen() {
             </Text>
           </View>
           <View style={styles.headerRight}>
-          <TouchableOpacity
-            style={[
-              styles.iconBtn,
-              {
-                backgroundColor: editMode ? colors.accent + '20' : colors.surface,
-                borderColor: editMode ? colors.accent : colors.border,
-              },
-            ]}
-            onPress={() => setEditMode(e => !e)}
-          >
-            <Ionicons
-              name={editMode ? 'checkmark' : 'reorder-four-outline'}
-              size={20}
-              color={editMode ? colors.accent : colors.textMuted}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={() => router.push('/settings')}
-          >
-            <Ionicons name="settings-outline" size={20} color={colors.textMuted} />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-
-      {/* Search + View Toggle */}
-      {!editMode && (
-        <View style={styles.searchRow}>
-          <View style={[styles.searchBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Ionicons name="search-outline" size={16} color={colors.textMuted} />
-            <TextInput
-              style={[styles.searchInput, { color: colors.text }]}
-              placeholder="Search utilities..."
-              placeholderTextColor={colors.textMuted}
-              value={query}
-              onChangeText={setQuery}
-              returnKeyType="search"
-            />
-            {query.length > 0 && (
-              <TouchableOpacity onPress={() => setQuery('')}>
-                <Ionicons name="close-circle" size={16} color={colors.textMuted} />
-              </TouchableOpacity>
-            )}
-          </View>
-          <TouchableOpacity
-            style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={() => setViewMode(v => (v === 'grid' ? 'list' : 'grid'))}
-          >
-            <Ionicons
-              name={viewMode === 'grid' ? 'list-outline' : 'grid-outline'}
-              size={20}
-              color={colors.textMuted}
-            />
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Category Filter Chips */}
-      {!editMode && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chips}
-          style={styles.chipScroll}
-        >
-          {badgeList.map(b => (
             <TouchableOpacity
-              key={b}
-              style={[
-                styles.chip,
-                badge === b && { backgroundColor: colors.accent, borderColor: colors.accent },
-              ]}
-              onPress={() => setBadge(b)}
+              style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => router.push('/manage-folders' as any)}
             >
-              <Text style={[styles.chipText, { color: badge === b ? '#fff' : colors.textMuted }]}>{b}</Text>
+              <Ionicons name="albums-outline" size={20} color={colors.textMuted} />
             </TouchableOpacity>
-          ))}
-        </ScrollView>
-      )}
-
-      {/* Sub-label */}
-      <View style={styles.subRow}>
-        <Text style={styles.subTitle}>{subLabel}</Text>
+            <TouchableOpacity
+              style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => router.push('/all-tools' as any)}
+            >
+              <Ionicons name="apps-outline" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => router.push('/settings')}
+            >
+              <Ionicons name="settings-outline" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
 
-      {/* Tool Grid / List */}
-      <FlatList
-        style={styles.listFlex}
-        key={listKey}
-        data={editMode ? orderedTools : displayTools}
-        keyExtractor={item => item.id}
-        numColumns={numColumns}
-        columnWrapperStyle={numColumns > 1 ? styles.row : undefined}
-        ItemSeparatorComponent={() => <View style={{ height: CARD_GAP }} />}
-        contentContainerStyle={styles.grid}
-        renderItem={renderItem}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      />
+      <View style={styles.searchRow}>
+        <View style={[styles.searchBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Ionicons name="search-outline" size={16} color={colors.textMuted} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text }]}
+            placeholder="Search tools..."
+            placeholderTextColor={colors.textMuted}
+            value={query}
+            onChangeText={setQuery}
+            returnKeyType="search"
+          />
+          {query.length > 0 && (
+            <TouchableOpacity onPress={() => setQuery('')}>
+              <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      <View style={styles.subRow}>
+        <Text style={styles.subTitle}>
+          {isSearching
+            ? `${searchResults.length} ${searchResults.length === 1 ? 'match' : 'matches'} for "${query.trim()}"`
+            : `${tiles.length} ${tiles.length === 1 ? 'folder' : 'folders'} · ${TOOLS.length} tools`}
+        </Text>
+      </View>
+
+      {isSearching ? (
+        <FlatList
+          style={styles.listFlex}
+          data={searchResults}
+          keyExtractor={item => item.id}
+          ItemSeparatorComponent={() => <View style={{ height: Spacing.sm }} />}
+          contentContainerStyle={styles.listContent}
+          renderItem={renderResult}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        />
+      ) : (
+        <FlatList
+          style={styles.listFlex}
+          key={`folders-${numColumns}`}
+          data={tiles}
+          keyExtractor={(item, idx) =>
+            item.kind === 'all' ? '__all' : `${item.folder.id}-${idx}`
+          }
+          numColumns={numColumns}
+          columnWrapperStyle={numColumns > 1 ? styles.row : undefined}
+          ItemSeparatorComponent={() => <View style={{ height: CARD_GAP }} />}
+          contentContainerStyle={styles.grid}
+          renderItem={renderTile}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -513,26 +453,9 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
     },
     searchInput: { flex: 1, fontSize: 14, fontFamily: Fonts.regular, padding: 0 },
     listFlex: { flex: 1 },
-    chipScroll: { 
-      flexGrow: 0,
-      flexShrink: 0,
-      width: '100%',
-      maxWidth: 1200,
-      alignSelf: 'center',
-    },
-    chips: { paddingHorizontal: Spacing.lg, gap: 8, paddingVertical: 12 },
-    chip: {
-      paddingHorizontal: 16,
-      paddingVertical: 8,
-      borderRadius: Radii.pill,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.surface,
-    },
-    chipText: { fontSize: 13, fontFamily: Fonts.semibold },
-    subRow: { 
-      paddingHorizontal: Spacing.lg, 
-      paddingTop: 6, 
+    subRow: {
+      paddingHorizontal: Spacing.lg,
+      paddingTop: 6,
       paddingBottom: Spacing.sm,
       width: '100%',
       maxWidth: 1200,
@@ -545,8 +468,15 @@ const createStyles = (colors: ReturnType<typeof useAppTheme>['colors']) =>
       textTransform: 'uppercase',
       letterSpacing: 1.2,
     },
-    grid: { 
-      paddingHorizontal: Spacing.lg, 
+    grid: {
+      paddingHorizontal: Spacing.lg,
+      paddingBottom: Spacing.huge,
+      width: '100%',
+      maxWidth: 1200,
+      alignSelf: 'center',
+    },
+    listContent: {
+      paddingHorizontal: Spacing.lg,
       paddingBottom: Spacing.huge,
       width: '100%',
       maxWidth: 1200,

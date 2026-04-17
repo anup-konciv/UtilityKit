@@ -39,6 +39,7 @@ export const TOOLS: ToolMeta[] = [
   { id: 'mood-journal', label: 'Mood Journal', description: 'Track daily mood & patterns', icon: 'happy-outline', route: '/tools/mood-journal', accent: '#F59E0B', badge: 'Health' },
   { id: 'breathing', label: 'Breathing', description: 'Guided breathing exercises', icon: 'leaf-outline', route: '/tools/breathing', accent: '#059669', badge: 'Health' },
   { id: 'bmi-calc', label: 'BMI Calculator', description: 'Body mass index', icon: 'body-outline', route: '/tools/bmi-calculator', accent: '#06B6D4', badge: 'Health' },
+  { id: 'period-tracker', label: 'Period Tracker', description: 'Menstrual cycle & symptom tracker', icon: 'flower-outline', route: '/tools/period-tracker', accent: '#E11D77', badge: 'Health' },
 
   /* ── Productivity & Time ── */
   { id: 'pomodoro', label: 'Pomodoro', description: 'Focus timer with work/break cycles', icon: 'hourglass-outline', route: '/tools/pomodoro', accent: '#EF4444', badge: 'Productivity' },
@@ -107,4 +108,41 @@ export const TOOLS: ToolMeta[] = [
   /* ── Fun ── */
   { id: 'dice-coin', label: 'Dice & Coin', description: 'Roll dice & flip coins', icon: 'dice-outline', route: '/tools/dice-coin', accent: '#F59E0B', badge: 'Fun' },
   { id: 'random-picker', label: 'Random Picker', description: 'List draws, multi-pick winners & number ranges', icon: 'shuffle-outline', route: '/tools/random-picker', accent: '#D946EF', badge: 'Fun' },
+  { id: 'tic-tac-toe', label: 'Tic-Tac-Toe', description: 'Classic X & O game vs AI or friend', icon: 'game-controller-outline', route: '/tools/tic-tac-toe', accent: '#3B82F6', badge: 'Fun' },
+  { id: 'memory-match', label: 'Memory Match', description: 'Flip cards & find matching pairs', icon: 'copy-outline', route: '/tools/memory-match', accent: '#8B5CF6', badge: 'Fun' },
+  { id: 'game-2048', label: '2048', description: 'Slide & merge tiles to reach 2048', icon: 'apps-outline', route: '/tools/game-2048', accent: '#F59E0B', badge: 'Fun' },
+  { id: 'snake-game', label: 'Snake', description: 'Classic snake game with levels', icon: 'game-controller-outline', route: '/tools/snake-game', accent: '#10B981', badge: 'Fun' },
+  { id: 'word-scramble', label: 'Word Scramble', description: 'Unscramble words against the clock', icon: 'text-outline', route: '/tools/word-scramble', accent: '#EC4899', badge: 'Fun' },
+  { id: 'sudoku', label: 'Sudoku', description: 'Number puzzle with 3 difficulty levels', icon: 'keypad-outline', route: '/tools/sudoku', accent: '#6366F1', badge: 'Fun' },
+  { id: 'minesweeper', label: 'Minesweeper', description: 'Find mines without triggering them', icon: 'flag-outline', route: '/tools/minesweeper', accent: '#64748B', badge: 'Fun' },
+  { id: 'quiz-trivia', label: 'Quiz Trivia', description: 'Test your knowledge across topics', icon: 'help-circle-outline', route: '/tools/quiz-trivia', accent: '#F97316', badge: 'Fun' },
+
+  /* ── New Health & Wellness ── */
+  { id: 'bp-log', label: 'Blood Pressure', description: 'Track BP readings & trends', icon: 'heart-outline', route: '/tools/bp-log', accent: '#EF4444', badge: 'Health' },
+  { id: 'medication-tracker', label: 'Medications', description: 'Track meds, doses & adherence', icon: 'medkit-outline', route: '/tools/medication-tracker', accent: '#06B6D4', badge: 'Health' },
+  { id: 'gratitude-journal', label: 'Gratitude', description: 'Daily gratitude journal & streaks', icon: 'sunny-outline', route: '/tools/gratitude-journal', accent: '#F59E0B', badge: 'Health' },
+  { id: 'step-counter', label: 'Step Counter', description: 'Daily step tracking & goals', icon: 'footsteps-outline', route: '/tools/step-counter', accent: '#10B981', badge: 'Health' },
+
+  /* ── New Life & Lifestyle ── */
+  { id: 'book-tracker', label: 'Book Tracker', description: 'Track your reading list', icon: 'book-outline', route: '/tools/book-tracker', accent: '#8B5CF6', badge: 'Life' },
+  { id: 'wish-list', label: 'Wish List', description: 'Track things you want to buy', icon: 'star-outline', route: '/tools/wish-list', accent: '#EC4899', badge: 'Life' },
+  { id: 'recipe-book', label: 'Recipe Book', description: 'Save & organize recipes', icon: 'restaurant-outline', route: '/tools/recipe-book', accent: '#F97316', badge: 'Life' },
+  { id: 'plant-care', label: 'Plant Care', description: 'Track plant watering schedules', icon: 'leaf-outline', route: '/tools/plant-care', accent: '#059669', badge: 'Life' },
+  { id: 'pet-care', label: 'Pet Care', description: 'Pet health, vet & feeding log', icon: 'paw-outline', route: '/tools/pet-care', accent: '#F43F5E', badge: 'Life' },
+  { id: 'parking-saver', label: 'Parking Saver', description: 'Save where you parked', icon: 'car-outline', route: '/tools/parking-saver', accent: '#3B82F6', badge: 'Utility' },
+  { id: 'daily-quote', label: 'Daily Quote', description: 'Inspirational quotes & favorites', icon: 'chatbubble-outline', route: '/tools/daily-quote', accent: '#F59E0B', badge: 'Life' },
+
+  /* ── New Finance ── */
+  { id: 'loan-book', label: 'Loan Book', description: 'Track money lent & borrowed', icon: 'cash-outline', route: '/tools/loan-book', accent: '#7C3AED', badge: 'Finance' },
+  { id: 'discount-calculator', label: 'Discount Calc', description: 'Discounts, tax & deals', icon: 'pricetag-outline', route: '/tools/discount-calculator', accent: '#E11D48', badge: 'Finance' },
+
+  /* ── New Utility ── */
+  { id: 'morse-code', label: 'Morse Code', description: 'Text to Morse translator', icon: 'radio-outline', route: '/tools/morse-code', accent: '#64748B', badge: 'Utility' },
+  { id: 'roman-numeral', label: 'Roman Numerals', description: 'Convert to/from Roman numerals', icon: 'text-outline', route: '/tools/roman-numeral', accent: '#9333EA', badge: 'Convert' },
+  { id: 'aspect-ratio', label: 'Aspect Ratio', description: 'Calculate & compare ratios', icon: 'resize-outline', route: '/tools/aspect-ratio', accent: '#0891B2', badge: 'Utility' },
+  { id: 'metronome', label: 'Metronome', description: 'BPM tempo & tap timing', icon: 'musical-notes-outline', route: '/tools/metronome', accent: '#D946EF', badge: 'Utility' },
+
+  /* ── New Productivity ── */
+  { id: 'meeting-planner', label: 'Meeting Planner', description: 'Find times across timezones', icon: 'people-outline', route: '/tools/meeting-planner', accent: '#2563EB', badge: 'Productivity' },
+  { id: 'kanban-board', label: 'Kanban Board', description: 'Task board with columns', icon: 'clipboard-outline', route: '/tools/kanban-board', accent: '#6366F1', badge: 'Productivity' },
 ];
